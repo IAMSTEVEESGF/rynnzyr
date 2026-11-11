@@ -18,32 +18,32 @@ async def on_message(message: discord.Message):
     if not message.content.startswith("."):
         return
 
-    # Strip only the dot from the front, keep everything else exact
-    content = message.content[1:]
+    # Remove the dot and any outer spaces
+    content = message.content[1:].strip()
 
-    if content.lower() == "help":
-        await message.channel.send(
-            "**Commands:**\n"
-            "`.design |` ➔ Changes all channels to `|name`\n"
-            "`.design | ` ➔ Changes all channels to `| name` (notice the space)\n"
-            "`.design default` ➔ Removes all symbols, leaving just `name`"
-        )
+    # Split the command exactly at the first space
+    # ".design |" becomes ["design", "|"]
+    # ".design 〘📊〙・" becomes ["design", "〘📊〙・"]
+    parts = content.split(" ", 1)
+
+    if parts[0].lower() == "help":
+        await message.channel.send("Type `.design |` (for |name) or `.design | ` (for | name)")
         return
 
-    if content.lower().startswith("design "):
-        # Grabs EXACTLY what you typed after ".design "
-        # If you type ".design | ", new_design is "| "
-        # If you type ".design |", new_design is "|"
-        new_design = content[7:]
-        
-        # Allow resetting to default names
-        if new_design.strip().lower() == "default":
-            new_design = ""
-        elif not new_design.strip():
-            await message.channel.send("🤔 You forgot the new design! Try `.design |`")
+    if parts[0].lower() == "design":
+        if len(parts) < 2:
+            await message.channel.send("❌ You forgot the design! Try `.design |`")
             return
+            
+        # This is exactly what you typed after the space
+        new_design = parts[1]
+        
+        # If you type ".design default", it removes the design entirely
+        if new_design.lower() == "default":
+            new_design = ""
 
-        thinking = await message.channel.send(f"🔧 Working on it... changing design to `{new_design}`.")
+        # Show exactly what the bot sees so you can verify
+        thinking = await message.channel.send(f"🔧 Working on it... Detected design: `{new_design}`")
         
         guild = message.guild
         renamed = []
@@ -53,28 +53,26 @@ async def on_message(message: discord.Message):
             if isinstance(channel, discord.CategoryChannel):
                 continue
                 
-            # Strip ALL symbols/emojis/spaces from the start of the current name
-            # e.g. "〘📊〙・general" -> "general", "-nexus" -> "nexus", "| nexus" -> "nexus"
+            # Strip EVERY symbol, emoji, and space from the start
+            # "-nexus" -> "nexus"
+            # "〘📊〙・general" -> "general"
             clean_name = re.sub(r'^[^\w]+', '', channel.name)
             
-            # Failsafe if the channel name was literally just symbols
             if not clean_name:
                 clean_name = "channel"
 
-            # Combine your new design + the clean name
+            # Combine exact design + clean name
             new_name = f"{new_design}{clean_name}"
             
-            # Discord API requires names to be lowercase and without some characters
-            new_name = new_name.lower().strip()
+            # Discord names must be lowercase
+            new_name = new_name.lower()
             
             if channel.name != new_name:
                 try:
                     await channel.edit(name=new_name)
                     renamed.append(f"`{channel.name}` ➔ `{new_name}`")
-                except discord.Forbidden:
-                    failed.append(f"❌ No permission to edit `{channel.name}`")
                 except Exception as e:
-                    failed.append(f"❌ Error on `{channel.name}`: {e}")
+                    failed.append(f"❌ `{channel.name}` failed: {str(e)}")
                     
         msg = ""
         if renamed:
@@ -82,7 +80,7 @@ async def on_message(message: discord.Message):
         if failed:
             msg += "\n\n**Errors:**\n" + "\n".join(failed)
         if not renamed and not failed:
-            msg = f"😴 All channels already have this design."
+            msg = f"😴 All channels are already set to `{new_design}name`."
             
         await thinking.edit(content=msg)
 
