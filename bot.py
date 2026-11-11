@@ -18,25 +18,28 @@ async def on_message(message: discord.Message):
     if not message.content.startswith("."):
         return
 
-    content = message.content[1:].strip()
+    # Strip only the dot from the front, keep everything else exact
+    content = message.content[1:]
 
     if content.lower() == "help":
         await message.channel.send(
             "**Commands:**\n"
-            "`.design |` ➔ Changes all channels to `|name` (no space)\n"
-            "`.design 〘📊〙・` ➔ Changes all channels to `〘📊〙・name`\n"
-            "`.design default` ➔ Removes designs, leaving just `name`"
+            "`.design |` ➔ Changes all channels to `|name`\n"
+            "`.design | ` ➔ Changes all channels to `| name` (notice the space)\n"
+            "`.design default` ➔ Removes all symbols, leaving just `name`"
         )
         return
 
     if content.lower().startswith("design "):
-        # Grab everything after ".design "
-        new_design = content[7:].strip()
+        # Grabs EXACTLY what you typed after ".design "
+        # If you type ".design | ", new_design is "| "
+        # If you type ".design |", new_design is "|"
+        new_design = content[7:]
         
-        # If they type ".design default", remove the design entirely
-        if new_design.lower() == "default":
+        # Allow resetting to default names
+        if new_design.strip().lower() == "default":
             new_design = ""
-        elif not new_design:
+        elif not new_design.strip():
             await message.channel.send("🤔 You forgot the new design! Try `.design |`")
             return
 
@@ -50,11 +53,19 @@ async def on_message(message: discord.Message):
             if isinstance(channel, discord.CategoryChannel):
                 continue
                 
-            # 1. Strip ALL symbols/emojis from the start of the current name
+            # Strip ALL symbols/emojis/spaces from the start of the current name
+            # e.g. "〘📊〙・general" -> "general", "-nexus" -> "nexus", "| nexus" -> "nexus"
             clean_name = re.sub(r'^[^\w]+', '', channel.name)
             
-            # 2. Add the new design to the front (NO SPACE)
+            # Failsafe if the channel name was literally just symbols
+            if not clean_name:
+                clean_name = "channel"
+
+            # Combine your new design + the clean name
             new_name = f"{new_design}{clean_name}"
+            
+            # Discord API requires names to be lowercase and without some characters
+            new_name = new_name.lower().strip()
             
             if channel.name != new_name:
                 try:
@@ -71,7 +82,7 @@ async def on_message(message: discord.Message):
         if failed:
             msg += "\n\n**Errors:**\n" + "\n".join(failed)
         if not renamed and not failed:
-            msg = f"😴 All channels are already set to `{new_design}name`."
+            msg = f"😴 All channels already have this design."
             
         await thinking.edit(content=msg)
 
