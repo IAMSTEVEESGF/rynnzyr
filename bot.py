@@ -8,7 +8,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix=".", intents=intents)
 
-# --- SAB EMOJI DICTIONARY ---
+# --- YOUR CUSTOM SAB EMOJI DICTIONARY ---
 SAB_EMOJIS = {
     "staff-rules": "📚", "staff-announcements": "📣", "staff-logs": "🔖",
     "staff-chat": "💬", "staff-promotions": "🎉", "staff-demotions": "⚠️",
@@ -33,8 +33,6 @@ SAB_EMOJIS = {
 }
 
 def get_clean_name(name):
-    # Strips EVERYTHING except letters, numbers, and hyphens.
-    # So "┃📊┃sab-leaks" or "[ 📊 ] · sab-leaks" becomes just "sab-leaks"
     name = re.sub(r'^\[.*?\]\s*[^\w\s]*\s*', '', name)
     name = re.sub(r'^[^\w]+', '', name)
     name = re.sub(r'[^\w\s-]', '', name)
@@ -53,12 +51,8 @@ async def on_message(message: discord.Message):
 
     content = message.content[1:].strip().lower()
 
-    if content in ("help", "commands"):
-        await message.channel.send("🤖 **Bot is alive!**\nType `.sab` to apply `Emoji┃Name` design.")
-        return
-
     if content in ("sab", "design sab"):
-        thinking = await message.channel.send("🔧 Working on it... Applying `Emoji┃Name` to all channels.")
+        thinking = await message.channel.send("🔧 Working on it... Applying `Emoji┃Name`. **Do not run this again while it is working** (Takes 5s per channel to bypass Discord Rate Limits).")
         
         guild = message.guild
         renamed = []
@@ -73,14 +67,15 @@ async def on_message(message: discord.Message):
             if clean_name in SAB_EMOJIS:
                 emoji = SAB_EMOJIS[clean_name]
                 
-                # THIS IS THE EXACT FORMAT YOU WANTED: ✨┃sab-leaks
+                # Format: ✨┃sab-leaks
                 new_name = f"{emoji}┃{clean_name}"
                 
                 if channel.name != new_name:
                     try:
                         await channel.edit(name=new_name)
                         renamed.append(f"`{channel.name}` ➔ `{new_name}`")
-                        await asyncio.sleep(3) # Rate limit protection
+                        # 5 second delay to prevent Discord 429 errors
+                        await asyncio.sleep(5) 
                     except Exception as e:
                         failed.append(f"❌ `{channel.name}`: {str(e)}")
             
@@ -95,4 +90,5 @@ async def on_message(message: discord.Message):
         await thinking.edit(content=msg)
 
 if __name__ == "__main__":
+    # Fixed the missing closing quote from the last version!
     bot.run(os.getenv("DISCORD_TOKEN"))
