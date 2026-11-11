@@ -32,8 +32,6 @@ SAB_EMOJIS = {
 }
 
 # --- SERVER LAYOUT TEMPLATE ---
-# This tells the bot what categories to make, and which channels go inside them.
-# Format: "Category Name": [("channel-name", is_voice_channel)]
 SERVER_LAYOUT = {
     "STAFF GENERAL": [
         ("staff-rules", False), ("staff-announcements", False), ("staff-logs", False),
@@ -94,7 +92,14 @@ async def on_message(message: discord.Message):
     guild = message.guild
 
     if content == "create":
-        thinking = await message.channel.send("🔧 Working on it... Building the SAB server layout from scratch. **Do not spam this command.** (This will take a few minutes to avoid Discord limits).")
+        # --- COOL GREEN EMBED ---
+        embed = discord.Embed(
+            title="🛠️ Creating Server Layout",
+            description="Creating your Steal a brainrot server.\n\n⚠️ **Please do not spam this command for security reasons.**\nYour srv will be done in a few mins.",
+            color=discord.Color.green() # Cool green
+        )
+        
+        thinking = await message.channel.send(embed=embed)
         
         created_count = 0
         
@@ -128,7 +133,13 @@ async def on_message(message: discord.Message):
                     except Exception as e:
                         await message.channel.send(f"❌ Failed to create `{full_name}`: {str(e)}")
                         
-        await thinking.edit(content=f"✅ **Done!** Created {created_count} channels and categories.\n*Press `Cmd + R` to refresh your Discord sidebar.*")
+        # --- SUCCESS EMBED ---
+        success_embed = discord.Embed(
+            title="✅ Server Creation Complete!",
+            description=f"Successfully created **{created_count}** channels and categories!\n\n*Press `Cmd + R` (or `Ctrl + R`) to refresh your Discord sidebar to see the changes.*",
+            color=discord.Color.green()
+        )
+        await thinking.edit(embed=success_embed)
 
 if __name__ == "__main__":
     bot.run(os.getenv("DISCORD_TOKEN"))
