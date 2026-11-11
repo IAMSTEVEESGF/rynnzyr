@@ -1,11 +1,12 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 import os
 import asyncio
 
+# --- Setup Bot ---
 intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix=".", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- YOUR CUSTOM SAB EMOJI DICTIONARY ---
 SAB_EMOJIS = {
@@ -80,66 +81,76 @@ SERVER_LAYOUT = {
 @bot.event
 async def on_ready():
     print(f"✅ Assistant bot online as {bot.user}")
+    try:
+        # This syncs the slash commands to Discord
+        synced = await bot.tree.sync()
+        print(f"✅ Synced {len(synced)} slash command(s)")
+    except Exception as e:
+        print(f"❌ Failed to sync commands: {e}")
 
-@bot.event
-async def on_message(message: discord.Message):
-    if message.author.bot:
-        return
-    if not message.content.startswith("."):
-        return
-
-    content = message.content[1:].strip().lower()
-    guild = message.guild
-
-    if content == "create":
-        # --- COOL GREEN EMBED ---
-        embed = discord.Embed(
-            title="🛠️ Creating Server Layout",
-            description="Creating your Steal a brainrot server.\n\n⚠️ **Please do not spam this command for security reasons.**\nYour srv will be done in a few mins.",
-            color=discord.Color.green() # Cool green
-        )
+# --- THE /SETUP SLASH COMMAND ---
+@bot.tree.command(name="setup", description="Build the server layout")
+@app_commands.describe(design="Choose the design to use (defaults to sab)")
+@app_commands.choices(design=[
+    app_commands.Choice(name="SAB (Emojis + Names)", value="sab"),
+    app_commands.Choice(name="Plain (Just Names)", value="plain")
+])
+async def setup(interaction: discord.Interaction, design: app_commands.Choice[str] = None):
+    # 1. Acknowledge the interaction immediately so Discord doesn't say "The application didn't respond"
+    await interaction.response.defer(ephemeral=False)
+    
+    selected_design = design.value if design else "sab"
+    
+    # 2. Send the cool green embed
+    embed = discord.Embed(
+        title="🛠️ Creating Server Layout",
+        description="Creating your Steal a brainrot server.\n\n⚠️ **Please do not spam this command for security reasons.**\nYour srv will be done in a few mins.",
+        color=discord.Color.green()
+    )
+    await interaction.edit_original_response(embed=embed)
+    
+    guild = interaction.guild
+    created_count = 0
+    
+    for category_name, channels in SERVER_LAYOUT.items():
+        # 1. Create the Category
+        category = discord.utils.get(guild.categories, name=category_name)
+        if not category:
+            category = await guild.create_category(category_name)
+            await asyncio.sleep(2) 
         
-        thinking = await message.channel.send(embed=embed)
-        
-        created_count = 0
-        
-        for category_name, channels in SERVER_LAYOUT.items():
-            # 1. Create the Category
-            category = discord.utils.get(guild.categories, name=category_name)
-            if not category:
-                category = await guild.create_category(category_name)
-                await asyncio.sleep(2) # Prevent rate limit
+        # 2. Create the channels
+        for channel_name, is_voice in channels:
+            emoji = SAB_EMOJIS.get(channel_name, "")
             
-            # 2. Create the channels inside the category
-            for channel_name, is_voice in channels:
-                emoji = SAB_EMOJIS.get(channel_name, "")
+            # Decide format based on user choice
+            if selected_design == "sab" and emoji:
+                full_name = f"{emoji}┃{channel_name}"
+            else:
+                full_name = channel_name
                 
-                # Format: Emoji┃Name
-                full_name = f"{emoji}┃{channel_name}" if emoji else channel_name
-                
-                # Check if channel already exists to prevent duplicates
-                existing_channel = discord.utils.get(guild.channels, name=full_name)
-                
-                if not existing_channel:
-                    try:
-                        if is_voice:
-                            await guild.create_voice_channel(name=full_name, category=category)
-                        else:
-                            await guild.create_text_channel(name=full_name, category=category)
-                        
-                        created_count += 1
-                        # Wait 3 seconds between every channel to avoid Discord 429 Errors
-                        await asyncio.sleep(3) 
-                    except Exception as e:
-                        await message.channel.send(f"❌ Failed to create `{full_name}`: {str(e)}")
-                        
-        # --- SUCCESS EMBED ---
-        success_embed = discord.Embed(
-            title="✅ Server Creation Complete!",
-            description=f"Successfully created **{created_count}** channels and categories!\n\n*Press `Cmd + R` (or `Ctrl + R`) to refresh your Discord sidebar to see the changes.*",
-            color=discord.Color.green()
-        )
-        await thinking.edit(embed=success_embed)
+            # Check if it already exists
+            existing_channel = discord.utils.get(guild.channels, name=full_name)
+            
+            if not existing_channel:
+                try:
+                    if is_voice:
+                        await guild.create_voice_channel(name=full_name, category=category)
+                    else:
+                        await guild.create_text_channel(name=full_name, category=category)
+                    
+                    created_count += 1
+                    await asyncio.sleep(3) # Protect against rate limits
+                except Exception as e:
+                    print(f"Failed to create {full_name}: {e}")
+                    
+    # --- SUCCESS EMBED ---
+    success_embed = discord.Embed(
+        title="✅ Server Creation Complete!",
+        description=f"Successfully created **{created_count}** channels and categories using the **{selected_design}** design!\n\n*Press `Cmd + R` (or `Ctrl + R`) to refresh your Discord sidebar to see the changes.*",
+        color=discord.Color.green()
+    )
+    await interaction.edit_original_response(embed=success_embed)
 
 if __name__ == "__main__":
     bot.run(os.getenv("DISCORD_TOKEN"))
