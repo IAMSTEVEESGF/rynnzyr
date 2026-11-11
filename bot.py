@@ -82,7 +82,6 @@ SERVER_LAYOUT = {
 async def on_ready():
     print(f"✅ Assistant bot online as {bot.user}")
     try:
-        # This syncs the slash commands to Discord
         synced = await bot.tree.sync()
         print(f"✅ Synced {len(synced)} slash command(s)")
     except Exception as e:
@@ -96,12 +95,10 @@ async def on_ready():
     app_commands.Choice(name="Plain (Just Names)", value="plain")
 ])
 async def setup(interaction: discord.Interaction, design: app_commands.Choice[str] = None):
-    # 1. Acknowledge the interaction immediately so Discord doesn't say "The application didn't respond"
     await interaction.response.defer(ephemeral=False)
     
     selected_design = design.value if design else "sab"
     
-    # 2. Send the cool green embed
     embed = discord.Embed(
         title="🛠️ Creating Server Layout",
         description="Creating your Steal a brainrot server.\n\n⚠️ **Please do not spam this command for security reasons.**\nYour srv will be done in a few mins.",
@@ -113,23 +110,24 @@ async def setup(interaction: discord.Interaction, design: app_commands.Choice[st
     created_count = 0
     
     for category_name, channels in SERVER_LAYOUT.items():
+        # --- THIS IS THE NEW FORMATTING LINE ---
+        formatted_category_name = f"〔✨ {category_name} 〕"
+        
         # 1. Create the Category
-        category = discord.utils.get(guild.categories, name=category_name)
+        category = discord.utils.get(guild.categories, name=formatted_category_name)
         if not category:
-            category = await guild.create_category(category_name)
+            category = await guild.create_category(formatted_category_name)
             await asyncio.sleep(2) 
         
         # 2. Create the channels
         for channel_name, is_voice in channels:
             emoji = SAB_EMOJIS.get(channel_name, "")
             
-            # Decide format based on user choice
             if selected_design == "sab" and emoji:
                 full_name = f"{emoji}┃{channel_name}"
             else:
                 full_name = channel_name
                 
-            # Check if it already exists
             existing_channel = discord.utils.get(guild.channels, name=full_name)
             
             if not existing_channel:
@@ -140,11 +138,10 @@ async def setup(interaction: discord.Interaction, design: app_commands.Choice[st
                         await guild.create_text_channel(name=full_name, category=category)
                     
                     created_count += 1
-                    await asyncio.sleep(3) # Protect against rate limits
+                    await asyncio.sleep(3) 
                 except Exception as e:
                     print(f"Failed to create {full_name}: {e}")
                     
-    # --- SUCCESS EMBED ---
     success_embed = discord.Embed(
         title="✅ Server Creation Complete!",
         description=f"Successfully created **{created_count}** channels and categories using the **{selected_design}** design!\n\n*Press `Cmd + R` (or `Ctrl + R`) to refresh your Discord sidebar to see the changes.*",
