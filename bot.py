@@ -8,7 +8,7 @@ bot = commands.Bot(command_prefix=".", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"✅ Assistant bot online as {bot.user}")
+    print(f"🧨 Assistant bot online as {bot.user}")
 
 @bot.event
 async def on_message(message: discord.Message):
