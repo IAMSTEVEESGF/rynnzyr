@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import re
+import asyncio
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -18,32 +19,30 @@ async def on_message(message: discord.Message):
     if not message.content.startswith("."):
         return
 
-    # Remove the dot and any outer spaces
     content = message.content[1:].strip()
-
-    # Split the command exactly at the first space
-    # ".design |" becomes ["design", "|"]
-    # ".design 〘📊〙・" becomes ["design", "〘📊〙・"]
     parts = content.split(" ", 1)
 
     if parts[0].lower() == "help":
-        await message.channel.send("Type `.design |` (for |name) or `.design | ` (for | name)")
+        await message.channel.send("🤖 **Bot is alive!**\n\nType `.design pipe` for the thick ┃ line.\nType `.design |` for the thin | line.")
         return
 
     if parts[0].lower() == "design":
-        if len(parts) < 2:
-            await message.channel.send("❌ You forgot the design! Try `.design |`")
+        if len(parts) < 2 or not parts[1]:
+            await message.channel.send("❌ You forgot the design! Try `.design pipe`")
             return
             
-        # This is exactly what you typed after the space
         new_design = parts[1]
         
-        # If you type ".design default", it removes the design entirely
-        if new_design.lower() == "default":
+        # SHORTCUTS: If you type these words, it uses the exact symbols
+        if new_design.lower() == "pipe":
+            new_design = "┃"  # Thick line
+        elif new_design.lower() == "line":
+            new_design = "│"  # Medium line
+        elif new_design.lower() == "default":
             new_design = ""
 
-        # Show exactly what the bot sees so you can verify
-        thinking = await message.channel.send(f"🔧 Working on it... Detected design: `{new_design}`")
+        # Show exactly what the bot sees
+        thinking = await message.channel.send(f"🔧 Working on it... Changing design to: `{new_design}`")
         
         guild = message.guild
         renamed = []
@@ -53,26 +52,22 @@ async def on_message(message: discord.Message):
             if isinstance(channel, discord.CategoryChannel):
                 continue
                 
-            # Strip EVERY symbol, emoji, and space from the start
-            # "-nexus" -> "nexus"
-            # "〘📊〙・general" -> "general"
+            # Strip ALL symbols from the start (keeps only the letters/numbers)
             clean_name = re.sub(r'^[^\w]+', '', channel.name)
-            
             if not clean_name:
                 clean_name = "channel"
 
-            # Combine exact design + clean name
-            new_name = f"{new_design}{clean_name}"
-            
-            # Discord names must be lowercase
-            new_name = new_name.lower()
+            # Combine the design and the clean name
+            new_name = f"{new_design}{clean_name}".lower()
             
             if channel.name != new_name:
                 try:
                     await channel.edit(name=new_name)
                     renamed.append(f"`{channel.name}` ➔ `{new_name}`")
+                    # Wait 3 seconds to avoid Discord rate limits
+                    await asyncio.sleep(3) 
                 except Exception as e:
-                    failed.append(f"❌ `{channel.name}` failed: {str(e)}")
+                    failed.append(f"❌ `{channel.name}`: {str(e)}")
                     
         msg = ""
         if renamed:
@@ -80,7 +75,7 @@ async def on_message(message: discord.Message):
         if failed:
             msg += "\n\n**Errors:**\n" + "\n".join(failed)
         if not renamed and not failed:
-            msg = f"😴 All channels are already set to `{new_design}name`."
+            msg = f"😴 All channels are already correct."
             
         await thinking.edit(content=msg)
 
