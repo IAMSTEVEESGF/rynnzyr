@@ -1,7 +1,6 @@
 import discord
 from discord.ext import commands
 import os
-import re
 import asyncio
 
 intents = discord.Intents.default()
@@ -32,11 +31,53 @@ SAB_EMOJIS = {
     "music": "🎵"
 }
 
-def get_clean_name(name):
-    name = re.sub(r'^\[.*?\]\s*[^\w\s]*\s*', '', name)
-    name = re.sub(r'^[^\w]+', '', name)
-    name = re.sub(r'[^\w\s-]', '', name)
-    return name.replace(" ", "-").strip().lower()
+# --- SERVER LAYOUT TEMPLATE ---
+# This tells the bot what categories to make, and which channels go inside them.
+# Format: "Category Name": [("channel-name", is_voice_channel)]
+SERVER_LAYOUT = {
+    "STAFF GENERAL": [
+        ("staff-rules", False), ("staff-announcements", False), ("staff-logs", False),
+        ("staff-chat", False), ("staff-promotions", False), ("staff-demotions", False),
+        ("staff-vc", True)
+    ],
+    "WELCOME": [
+        ("invite-tracker", False), ("welcome", False), ("goodbye", False)
+    ],
+    "IMPORTANT": [
+        ("rules", False), ("announcements", False), ("sab-leaks", False),
+        ("server-boosts", False), ("boosters-rewards", False), ("polls", False),
+        ("scammers", False), ("applications", False), ("server-updates", False),
+        ("hall-of-fame", False), ("content", False), ("support-ticket", False)
+    ],
+    "MIDDLEMAN": [
+        ("verified-middleman", False), ("middleman-ticket", False), ("middleman-vouches", False)
+    ],
+    "GIVEAWAYS": [
+        ("giveaways", False), ("flash-giveaways", False), ("giveaways-vouches", False),
+        ("giveaways-vc", True)
+    ],
+    "GENERAL": [
+        ("general", False), ("media", False), ("commands", False), ("levels", False)
+    ],
+    "TRADING & DUELING": [
+        ("trading-forum", False), ("owners-trading", False), ("trading", False),
+        ("mid-trading", False), ("og-trading", False), ("duel-requests", False),
+        ("win-or-loss", False), ("owners-vouches", False), ("staff-vouches", False),
+        ("vouches", False)
+    ],
+    "CONTENT CREATORS": [
+        ("content-rules", False), ("content-announcements", False), ("creators-chat", False),
+        ("content-ideas", False), ("creators-vc", True)
+    ],
+    "PARTNERSHIP": [
+        ("partnerships", False), ("self-promo", False), ("paid-promo", False),
+        ("self-promoters", True)
+    ],
+    "VOICE CHATS": [
+        ("owners-vc", True), ("vc-1", True), ("vc-2", True), ("stage", True),
+        ("sab-vc", True), ("duel-vc", True), ("music", True)
+    ]
+}
 
 @bot.event
 async def on_ready():
@@ -50,45 +91,44 @@ async def on_message(message: discord.Message):
         return
 
     content = message.content[1:].strip().lower()
+    guild = message.guild
 
-    if content in ("sab", "design sab"):
-        thinking = await message.channel.send("🔧 Working on it... Applying `Emoji┃Name`. **Do not run this again while it is working** (Takes 5s per channel to bypass Discord Rate Limits).")
+    if content == "create":
+        thinking = await message.channel.send("🔧 Working on it... Building the SAB server layout from scratch. **Do not spam this command.** (This will take a few minutes to avoid Discord limits).")
         
-        guild = message.guild
-        renamed = []
-        failed = []
+        created_count = 0
         
-        for channel in guild.channels:
-            if isinstance(channel, discord.CategoryChannel):
-                continue
-                
-            clean_name = get_clean_name(channel.name)
+        for category_name, channels in SERVER_LAYOUT.items():
+            # 1. Create the Category
+            category = discord.utils.get(guild.categories, name=category_name)
+            if not category:
+                category = await guild.create_category(category_name)
+                await asyncio.sleep(2) # Prevent rate limit
             
-            if clean_name in SAB_EMOJIS:
-                emoji = SAB_EMOJIS[clean_name]
+            # 2. Create the channels inside the category
+            for channel_name, is_voice in channels:
+                emoji = SAB_EMOJIS.get(channel_name, "")
                 
-                # Format: ✨┃sab-leaks
-                new_name = f"{emoji}┃{clean_name}"
+                # Format: Emoji┃Name
+                full_name = f"{emoji}┃{channel_name}" if emoji else channel_name
                 
-                if channel.name != new_name:
+                # Check if channel already exists to prevent duplicates
+                existing_channel = discord.utils.get(guild.channels, name=full_name)
+                
+                if not existing_channel:
                     try:
-                        await channel.edit(name=new_name)
-                        renamed.append(f"`{channel.name}` ➔ `{new_name}`")
-                        # 5 second delay to prevent Discord 429 errors
-                        await asyncio.sleep(5) 
+                        if is_voice:
+                            await guild.create_voice_channel(name=full_name, category=category)
+                        else:
+                            await guild.create_text_channel(name=full_name, category=category)
+                        
+                        created_count += 1
+                        # Wait 3 seconds between every channel to avoid Discord 429 Errors
+                        await asyncio.sleep(3) 
                     except Exception as e:
-                        failed.append(f"❌ `{channel.name}`: {str(e)}")
-            
-        msg = ""
-        if renamed:
-            msg += "✅ **Done!** Channels updated:\n" + "\n".join(renamed)
-        if failed:
-            msg += "\n\n**Errors:**\n" + "\n".join(failed)
-        if not renamed and not failed:
-            msg = "😴 All channels are already correct."
-            
-        await thinking.edit(content=msg)
+                        await message.channel.send(f"❌ Failed to create `{full_name}`: {str(e)}")
+                        
+        await thinking.edit(content=f"✅ **Done!** Created {created_count} channels and categories.\n*Press `Cmd + R` to refresh your Discord sidebar.*")
 
 if __name__ == "__main__":
-    # Fixed the missing closing quote from the last version!
     bot.run(os.getenv("DISCORD_TOKEN"))
