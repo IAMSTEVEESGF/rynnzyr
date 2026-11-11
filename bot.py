@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import os
-import re  # This is the magic library that makes it smart
+import re
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -24,9 +24,7 @@ async def on_message(message: discord.Message):
         await message.channel.send("Type `.design |` to change all channel designs to `|`")
         return
 
-    # The new smart command
     if content.lower().startswith("design "):
-        # Grab whatever the user typed after ".design "
         new_design = content[7:].strip() 
         
         if not new_design:
@@ -43,14 +41,12 @@ async def on_message(message: discord.Message):
             if isinstance(channel, discord.CategoryChannel):
                 continue
                 
-            # THE SMART PART: This regex strips ALL leading symbols, brackets, and emojis
-            # It looks at the start of the channel name until it hits a letter or number
+            # Strips all symbols/emojis from the start of the name
             clean_name = re.sub(r'^[^\w]+', '', channel.name)
             
-            # Build the new name
-            new_name = f"{new_design} {clean_name}".strip()
+            # THIS IS THE LINE I CHANGED: Removed the space between {new_design} and {clean_name}
+            new_name = f"{new_design}{clean_name}".strip()
             
-            # Don't rename if it's already exactly correct
             if channel.name != new_name:
                 try:
                     await channel.edit(name=new_name)
