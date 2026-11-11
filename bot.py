@@ -8,34 +8,36 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix=".", intents=intents)
 
-# --- SMART EMOJI DICTIONARY ---
-# The bot looks for these words in the channel name.
-# If it finds one, it adds the emoji. You can add as many as you want here!
-EMOJI_MAP = {
-    "general": "💬",
-    "chat": "🗣️",
-    "trade": "📊",
-    "trading": "📈",
-    "staff": "🛡️",
-    "admin": "⚙️",
-    "log": "📝",
-    "welcome": "👋",
-    "rules": "📜",
-    "announce": "📢",
-    "vc": "🔊",
-    "music": "🎵",
-    "bot": "🤖",
-    "memes": "😂",
-    "polls": "📊",
-    "ticket": "🎫",
-    "help": "❓",
-    "vip": "💎",
-    "shop": "🛒",
-    "buy": "🛍️",
-    "sell": "💸",
-    "leaks": "🥷",
-    "vouch": "✅",
+# --- SAB EMOJI DICTIONARY ---
+SAB_EMOJIS = {
+    "staff-rules": "📚", "staff-announcements": "📣", "staff-logs": "🗄️",
+    "staff-chat": "💬", "staff-promotions": "🎉", "staff-demotions": "⚠️",
+    "staff-vc": "🎙️", "invite-tracker": "📈", "welcome": "👋",
+    "goodbye": "🕊️", "rules": "📚", "announcements": "📣",
+    "sab-leaks": "📊", "server-boosts": "🚀", "boosters-rewards": "⚡",
+    "polls": "🥇", "scammers": "⚠️", "applications": "📝",
+    "server-updates": "🔄", "hall-of-fame": "🥇", "content": "🎥",
+    "support-ticket": "🎟️", "verified-middleman": "🤝", "middleman-ticket": "🎫",
+    "middleman-vouches": "✅", "giveaways": "🎉", "flash-giveaways": "🎁",
+    "giveaways-vouches": "🎁", "giveaways-vc": "🏆", "general": "💬",
+    "media": "🖼️", "commands": "⚙️", "levels": "📈",
+    "trading-forum": "⚔️", "owners-trading": "👑", "trading": "💰",
+    "mid-trading": "⭐", "og-trading": "💎", "duel-requests": "⚔️",
+    "win-or-loss": "⚖️", "owners-vouches": "👑", "staff-vouches": "📊",
+    "vouches": "✅", "content-rules": "📚", "content-announcements": "📣",
+    "creators-chat": "🎥", "content-ideas": "✨", "creators-vc": "🎙️",
+    "partnerships": "🤝", "self-promo": "⭐", "paid-promo": "✨",
+    "self-promoters": "🎙️", "owners-vc": "👑", "vc-1": "🎙️",
+    "vc-2": "🎙️", "stage": "🎪", "sab-vc": "💰", "duel-vc": "⚔️",
+    "music": "🎵"
 }
+
+def get_clean_name(name):
+    # Strips old [ 📚 ] · or ┃📚┃ or - etc. to get JUST the channel name
+    name = re.sub(r'^\[.*?\]\s*[^\w\s]*\s*', '', name) # Strips [ Emoji ] · 
+    name = re.sub(r'^[^\w]+', '', name)               # Strips ┃📚┃ or -
+    name = re.sub(r'[^\w\s-]', '', name)              # Removes weird characters
+    return name.replace(" ", "-").strip().lower()
 
 @bot.event
 async def on_ready():
@@ -48,28 +50,15 @@ async def on_message(message: discord.Message):
     if not message.content.startswith("."):
         return
 
-    content = message.content[1:].strip()
-    parts = content.split(" ", 1)
+    content = message.content[1:].strip().lower()
 
-    if parts[0].lower() == "help":
-        await message.channel.send("🤖 **Bot is alive!**\nType `.design pipe` for the thick ┃ line. It will auto-add emojis.")
+    if content in ("help", "commands"):
+        await message.channel.send("🤖 **Bot is alive!**\nType `.sab` to apply the `┃emoji┃name` design.")
         return
 
-    if parts[0].lower() == "design":
-        if len(parts) < 2 or not parts[1]:
-            await message.channel.send("❌ You forgot the design! Try `.design pipe`")
-            return
-            
-        new_design = parts[1]
-        
-        if new_design.lower() == "pipe":
-            new_design = "┃"
-        elif new_design.lower() == "line":
-            new_design = "│"
-        elif new_design.lower() == "default":
-            new_design = ""
-
-        thinking = await message.channel.send(f"🔧 Working on it... Detected design: `{new_design}`. Smart-adding emojis...")
+    # --- THE .SAB COMMAND ---
+    if content in ("sab", "design sab"):
+        thinking = await message.channel.send("🔧 Working on it... Applying `┃emoji┃name` to all channels.")
         
         guild = message.guild
         renamed = []
@@ -79,39 +68,54 @@ async def on_message(message: discord.Message):
             if isinstance(channel, discord.CategoryChannel):
                 continue
                 
-            # 1. Strip old symbols to get the raw name
-            clean_name = re.sub(r'^[^\w]+', '', channel.name)
-            if not clean_name:
-                clean_name = "channel"
-
-            # 2. Find the matching emoji from our dictionary
-            channel_emoji = ""
-            for keyword, emoji in EMOJI_MAP.items():
-                if keyword in clean_name:
-                    # Format: Emoji + Dot separator (e.g. 📊・)
-                    channel_emoji = f"{emoji}・" 
-                    break
+            clean_name = get_clean_name(channel.name)
             
-            # 3. Build the final name: ┃ + 📊・ + trading
-            new_name = f"{new_design}{channel_emoji}{clean_name}".lower()
+            if clean_name in SAB_EMOJIS:
+                emoji = SAB_EMOJIS[clean_name]
+                
+                # THIS IS THE EXACT FORMAT YOU ASKED FOR: ┃emoji┃name
+                new_name = f"┃{emoji}┃{clean_name}"
+                
+                if channel.name != new_name:
+                    try:
+                        await channel.edit(name=new_name)
+                        renamed.append(f"`{channel.name}` ➔ `{new_name}`")
+                        await asyncio.sleep(3) # Rate limit protection
+                    except Exception as e:
+                        failed.append(f"❌ `{channel.name}`: {str(e)}")
             
-            if channel.name != new_name:
-                try:
-                    await channel.edit(name=new_name)
-                    renamed.append(f"`{channel.name}` ➔ `{new_name}`")
-                    await asyncio.sleep(3) # Wait to avoid Discord rate limits
-                except Exception as e:
-                    failed.append(f"❌ `{channel.name}`: {str(e)}")
-                    
         msg = ""
         if renamed:
-            msg += "✅ **Done!** Channels updated:\n" + "\n".join(renamed)
+            msg += "✅ **Done!** Applied SAB design:\n" + "\n".join(renamed)
         if failed:
             msg += "\n\n**Errors:**\n" + "\n".join(failed)
         if not renamed and not failed:
-            msg = f"😴 All channels are already correct."
+            msg = "😴 All channels are already matching the SAB design."
             
         await thinking.edit(content=msg)
+
+    # --- RESET COMMAND ---
+    if content == "reset":
+        thinking = await message.channel.send("🔧 Working on it... Resetting channels to default names.")
+        renamed = []
+        
+        for channel in message.guild.channels:
+            if isinstance(channel, discord.CategoryChannel):
+                continue
+                
+            clean_name = get_clean_name(channel.name)
+            if channel.name != clean_name:
+                try:
+                    await channel.edit(name=clean_name)
+                    renamed.append(f"`{channel.name}` ➔ `{clean_name}`")
+                    await asyncio.sleep(3)
+                except Exception:
+                    pass
+                    
+        if renamed:
+            await thinking.edit(content="✅ **Done!** Channels reset:\n" + "\n".join(renamed))
+        else:
+            await thinking.edit(content="😴 Channels are already clean.")
 
 if __name__ == "__main__":
     bot.run(os.getenv("DISCORD_TOKEN"))
