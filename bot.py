@@ -72,18 +72,15 @@ async def extract_design_from_image(image_bytes):
             line = line.strip()
             if not line: continue
             
-            # 1. Look for specific channels
             for name in SAB_EMOJIS.keys():
                 if name in line.lower():
                     parts = line.lower().split(name)
                     prefix = parts[0].strip()
                     suffix = parts[1].strip() if len(parts) > 1 else ""
                     
-                    # Keep brackets and dots, remove weird OCR junk
                     prefix = re.sub(r'[^\w\s\[\]\|•┃✦✨\{\}\(\)《》-]', '', prefix).strip()
                     suffix = re.sub(r'[^\w\s\[\]\|•┃✦✨\{\}\()《》-]', '', suffix).strip()
 
-                    # Smart Inject: If OCR missed the emoji (e.g. "[ ]" or "[]"), put it back!
                     emoji = SAB_EMOJIS[name]
                     if "[]" in prefix: prefix = prefix.replace("[]", f"[ {emoji} ]")
                     elif "[ ]" in prefix: prefix = prefix.replace("[ ]", f"[ {emoji} ]")
@@ -96,7 +93,6 @@ async def extract_design_from_image(image_bytes):
                             "suffix": " " + suffix if suffix else ""
                         }
             
-            # 2. Look for Categories
             for cat in SERVER_LAYOUT.keys():
                 if cat.lower() in line.lower():
                     parts = line.lower().split(cat.lower())
@@ -132,7 +128,6 @@ async def setup(
     custom_prefix: str = None, 
     reference_image: discord.Attachment = None
 ):
-    # 1. Admin Check
     if not interaction.user.guild_permissions.administrator and interaction.guild.owner_id != interaction.user.id:
         await interaction.response.send_message("❌ You must be an **Administrator** or the **Server Owner**.", ephemeral=True)
         return
@@ -144,21 +139,23 @@ async def setup(
     channel_designs = {}
     cat_design = None
 
-    # 2. Image Parsing
+    # IF IMAGE IS UPLOADED
     if reference_image:
         await interaction.edit_original_response(content="📸 Reading the specific channel designs from your image...")
         image_bytes = await reference_image.read()
         channel_designs, cat_design = await extract_design_from_image(image_bytes)
         
+        # STOP the bot if OCR fails, don't fall back to | !
         if not channel_designs:
-            await interaction.edit_original_response(content="⚠️ Couldn't read the channel designs from the image. Falling back to default style.")
+            await interaction.edit_original_response(content="❌ **Error:** I couldn't read the text from your image. Discord's font and emojis are too hard for the OCR to read. Please use the `custom_prefix` option instead (e.g., type `[ 📚 ] • ` in the box).")
+            return
 
     if final_prefix and not final_prefix.endswith(" "):
         final_prefix += " "
 
     embed = discord.Embed(
         title="🛠️ Updating Server Layout",
-        description="Applying designs and updating your server.\n\n⚠️ **Do not spam this command.**\nYour srv will be done in a few mins.",
+        description="Applying designs and updating your server.\n\n⚠️ **Do not spam this command.**",
         color=discord.Color.green()
     )
     await interaction.edit_original_response(content=None, embed=embed)
