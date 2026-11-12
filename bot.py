@@ -3,27 +3,19 @@ from discord import app_commands
 from discord.ext import commands
 import os
 import asyncio
+import io
 import re
+
+try:
+    import pytesseract
+    from PIL import Image
+    HAS_OCR = True
+except ImportError:
+    HAS_OCR = False
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- THIS IS YOUR PERFECT DESIGN ---
-# Just type the exact prefix and suffix you want for every channel!
-# If you want [ 📚 ] • rules, you put prefix: "[ ", suffix: " ] • "
-CHANNEL_DESIGN = {
-    "prefix": "[ ",
-    "suffix": " ] • "
-}
-
-# This is how you want the categories to look
-# Example: ---- 《IMPORTANT》 ----
-CATEGORY_DESIGN = {
-    "prefix": "---- 《",
-    "suffix": "》 ----"
-}
-
-# Your emojis (You can add more here)
 SAB_EMOJIS = {
     "staff-rules": "📚", "staff-announcements": "📣", "staff-logs": "🔖",
     "staff-chat": "💬", "staff-promotions": "🎉", "staff-demotions": "⚠️",
@@ -65,34 +57,131 @@ async def on_ready():
     print(f"✅ Assistant bot online as {bot.user}")
     await bot.tree.sync()
 
-@bot.tree.command(name="setup", description="Apply the perfect design to your server")
-async def setup(interaction: discord.Interaction):
-    
+async def extract_design_from_image(image_bytes):
+    if not HAS_OCR:
+        return {}, None
+    try:
+        image = Image.open(io.BytesIO(image_bytes))
+        text = pytesseract.image_to_string(image)
+        lines = text.split('\n')
+        
+        channel_designs = {}
+        category_design = None
+        
+        for line in lines:
+            line = line.strip()
+            if not line: continue
+            
+            # 1. Look for specific channels
+            for name in SAB_EMOJIS.keys():
+                if name in line.lower():
+                    parts = line.lower().split(name)
+                    prefix = parts[0].strip()
+                    suffix = parts[1].strip() if len(parts) > 1 else ""
+                    
+                    # Keep brackets and dots, remove weird OCR junk
+                    prefix = re.sub(r'[^\w\s\[\]\|•┃✦✨\{\}\(\)《》-]', '', prefix).strip()
+                    suffix = re.sub(r'[^\w\s\[\]\|•┃✦✨\{\}\()《》-]', '', suffix).strip()
+
+                    # Smart Inject: If OCR missed the emoji (e.g. "[ ]" or "[]"), put it back!
+                    emoji = SAB_EMOJIS[name]
+                    if "[]" in prefix: prefix = prefix.replace("[]", f"[ {emoji} ]")
+                    elif "[ ]" in prefix: prefix = prefix.replace("[ ]", f"[ {emoji} ]")
+                    elif "[" in prefix and "]" in prefix and emoji not in prefix:
+                        prefix = prefix.replace("[", f"[ {emoji} ", 1)
+
+                    if prefix or suffix:
+                        channel_designs[name] = {
+                            "prefix": prefix + " " if prefix else "",
+                            "suffix": " " + suffix if suffix else ""
+                        }
+            
+            # 2. Look for Categories
+            for cat in SERVER_LAYOUT.keys():
+                if cat.lower() in line.lower():
+                    parts = line.lower().split(cat.lower())
+                    prefix = parts[0].strip()
+                    suffix = parts[1].strip() if len(parts) > 1 else ""
+                    if prefix or suffix:
+                        prefix = re.sub(r'[^\w\s\[\]\|•┃✦✨\{\}\(\)《》-]', '', prefix).strip()
+                        suffix = re.sub(r'[^\w\s\[\]\|•┃✦✨\{\}\()《》-]', '', suffix).strip()
+                        category_design = {
+                            "prefix": prefix + " " if prefix else "",
+                            "suffix": " " + suffix if suffix else ""
+                        }
+                        
+        return channel_designs, category_design
+    except Exception as e:
+        print(f"OCR Error: {e}")
+        return {}, None
+
+@bot.tree.command(name="setup", description="Build or update the server layout")
+@app_commands.describe(
+    style="Choose a default design style",
+    custom_prefix="Type the exact prefix (e.g. [ 📚 ] • )",
+    reference_image="Upload an image to copy the text design from it"
+)
+@app_commands.choices(style=[
+    app_commands.Choice(name="SAB Style (┃ & 〔✨ 〕)", value="sab"),
+    app_commands.Choice(name="Photo Style ([ ] • & ---- 《》 ----)", value="photo"),
+    app_commands.Choice(name="Plain (No symbols)", value="plain")
+])
+async def setup(
+    interaction: discord.Interaction, 
+    style: app_commands.Choice[str] = None, 
+    custom_prefix: str = None, 
+    reference_image: discord.Attachment = None
+):
+    # 1. Admin Check
     if not interaction.user.guild_permissions.administrator and interaction.guild.owner_id != interaction.user.id:
-        await interaction.response.send_message("❌ Admin only.", ephemeral=True)
+        await interaction.response.send_message("❌ You must be an **Administrator** or the **Server Owner**.", ephemeral=True)
         return
 
-    await interaction.response.defer()
+    await interaction.response.defer(ephemeral=False)
     
+    selected_style = style.value if style else "sab"
+    final_prefix = custom_prefix
+    channel_designs = {}
+    cat_design = None
+
+    # 2. Image Parsing
+    if reference_image:
+        await interaction.edit_original_response(content="📸 Reading the specific channel designs from your image...")
+        image_bytes = await reference_image.read()
+        channel_designs, cat_design = await extract_design_from_image(image_bytes)
+        
+        if not channel_designs:
+            await interaction.edit_original_response(content="⚠️ Couldn't read the channel designs from the image. Falling back to default style.")
+
+    if final_prefix and not final_prefix.endswith(" "):
+        final_prefix += " "
+
     embed = discord.Embed(
-        title="🛠️ Applying Perfect Design",
-        description="Applying your custom design layout to every channel.\n\n⚠️ **Do not spam.**",
+        title="🛠️ Updating Server Layout",
+        description="Applying designs and updating your server.\n\n⚠️ **Do not spam this command.**\nYour srv will be done in a few mins.",
         color=discord.Color.green()
     )
-    await interaction.edit_original_response(embed=embed)
+    await interaction.edit_original_response(content=None, embed=embed)
     
     guild = interaction.guild
     updated_count = 0
     
     for category_name, channels in SERVER_LAYOUT.items():
         
-        # 1. CATEGORY DESIGN (e.g. ---- 《IMPORTANT》 ----)
-        formatted_cat = f"{CATEGORY_DESIGN['prefix']}{category_name}{CATEGORY_DESIGN['suffix']}"
-        
-        # Find existing category
+        # --- 1. HANDLE CATEGORIES ---
+        if cat_design:
+            formatted_cat = f"{cat_design['prefix']}{category_name}{cat_design['suffix']}".strip()
+        elif selected_style == "sab":
+            formatted_cat = f"〔✨ {category_name} 〕"
+        elif selected_style == "photo":
+            formatted_cat = f"---- 《{category_name}》 ----"
+        else:
+            formatted_cat = category_name
+
         category = None
         for c in guild.categories:
-            if category_name.lower() in c.name.lower():
+            clean_c = re.sub(r'[^\w\s]', '', c.name).strip().lower()
+            if category_name.lower() in clean_c:
                 category = c
                 break
                 
@@ -100,15 +189,28 @@ async def setup(interaction: discord.Interaction):
             category = await guild.create_category(formatted_cat)
             await asyncio.sleep(2)
         elif category.name != formatted_cat:
-            await category.edit(name=formatted_cat)
-            await asyncio.sleep(2)
+            try:
+                await category.edit(name=formatted_cat)
+                await asyncio.sleep(2)
+            except Exception:
+                pass
         
-        # 2. CHANNEL DESIGN (e.g. [ 📚 ] • rules)
+        # --- 2. HANDLE CHANNELS ---
         for channel_name, is_voice in channels:
             emoji = SAB_EMOJIS.get(channel_name, "")
             
-            # The exact name format you want
-            full_name = f"{CHANNEL_DESIGN['prefix']}{emoji}{CHANNEL_DESIGN['suffix']}{channel_name}"
+            # Format the new name
+            if channel_name in channel_designs:
+                design = channel_designs[channel_name]
+                full_name = f"{design['prefix']}{channel_name}{design['suffix']}".strip()
+            elif final_prefix:
+                full_name = f"{final_prefix}{channel_name}"
+            elif selected_style == "sab":
+                full_name = f"{emoji}┃{channel_name}" if emoji else channel_name
+            elif selected_style == "photo":
+                full_name = f"[ {emoji} ] • {channel_name}" if emoji else f"[ ] • {channel_name}"
+            else:
+                full_name = channel_name
 
             # Find existing channel
             existing_channel = None
@@ -132,11 +234,11 @@ async def setup(interaction: discord.Interaction):
                     updated_count += 1
                     await asyncio.sleep(3)
             except Exception as e:
-                print(f"Error: {e}")
+                print(f"Error on {channel_name}: {e}")
                     
     success_embed = discord.Embed(
-        title="✅ Layout Complete!",
-        description=f"Successfully applied the design to **{updated_count}** channels and categories.\n\n*Press `Cmd + R` to refresh your sidebar.*",
+        title="✅ Server Layout Complete!",
+        description=f"Successfully updated/created **{updated_count}** channels and categories.\n\n*Press `Cmd + R` to refresh your sidebar.*",
         color=discord.Color.green()
     )
     await interaction.edit_original_response(embed=success_embed)
