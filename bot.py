@@ -8,7 +8,7 @@ import re
 
 try:
     import pytesseract
-    from PIL import Image
+    from PIL import Image, ImageOps
     HAS_OCR = True
 except ImportError:
     HAS_OCR = False
@@ -16,6 +16,7 @@ except ImportError:
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# --- DEFAULT LAYOUT (Used if no ID, Image, or Prefix is provided) ---
 SAB_EMOJIS = {
     "staff-rules": "📚", "staff-announcements": "📣", "staff-logs": "🔖",
     "staff-chat": "💬", "staff-promotions": "🎉", "staff-demotions": "⚠️",
@@ -62,6 +63,9 @@ async def extract_design_from_image(image_bytes):
         return {}, None
     try:
         image = Image.open(io.BytesIO(image_bytes))
+        image = image.convert('L')
+        image = ImageOps.invert(image)
+        image = image.resize((image.width * 2, image.height * 2), Image.Resampling.LANCZOS)
         text = pytesseract.image_to_string(image)
         lines = text.split('\n')
         
@@ -113,6 +117,7 @@ async def extract_design_from_image(image_bytes):
 
 @bot.tree.command(name="setup", description="Build or update the server layout")
 @app_commands.describe(
+    source_server_id="Copy the exact layout (names, categories) from another server using its ID",
     style="Choose a default design style",
     custom_prefix="Type the exact prefix (e.g. [ 📚 ] • )",
     reference_image="Upload an image to copy the text design from it"
@@ -124,30 +129,93 @@ async def extract_design_from_image(image_bytes):
 ])
 async def setup(
     interaction: discord.Interaction, 
+    source_server_id: str = None,
     style: app_commands.Choice[str] = None, 
     custom_prefix: str = None, 
     reference_image: discord.Attachment = None
 ):
+    # 1. Admin Check
     if not interaction.user.guild_permissions.administrator and interaction.guild.owner_id != interaction.user.id:
         await interaction.response.send_message("❌ You must be an **Administrator** or the **Server Owner**.", ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=False)
     
+    guild = interaction.guild
+    updated_count = 0
+
+    # --- CLONE FROM SERVER ID ---
+    if source_server_id:
+        try:
+            source_guild = bot.get_guild(int(source_server_id))
+            if not source_guild:
+                source_guild = await bot.fetch_guild(int(source_server_id))
+        except ValueError:
+            await interaction.edit_original_response(content="❌ **Error:** Invalid Server ID. Please make sure it's a number.")
+            return
+        except discord.NotFound:
+            await interaction.edit_original_response(content="❌ **Error:** I couldn't find that server. Make sure I am actually inside the server you are trying to copy.")
+            return
+
+        embed = discord.Embed(
+            title="🛠️ Cloning Server Layout",
+            description=f"Copying categories and channels exactly from **{source_guild.name}**.\n\n⚠️ **Do not spam this command.**",
+            color=discord.Color.green()
+        )
+        await interaction.edit_original_response(content=None, embed=embed)
+
+        # Clone Categories and Channels
+        for src_cat in source_guild.categories:
+            # Check if category exists, else create
+            new_cat = discord.utils.get(guild.categories, name=src_cat.name)
+            if not new_cat:
+                new_cat = await guild.create_category(src_cat.name)
+                await asyncio.sleep(2)
+            
+            for src_ch in src_cat.channels:
+                # Check if channel exists
+                existing = discord.utils.get(guild.channels, name=src_ch.name)
+                if not existing:
+                    if isinstance(src_ch, discord.TextChannel):
+                        await guild.create_text_channel(src_ch.name, category=new_cat)
+                    elif isinstance(src_ch, discord.VoiceChannel):
+                        await guild.create_voice_channel(src_ch.name, category=new_cat)
+                    updated_count += 1
+                    await asyncio.sleep(3)
+
+        # Clone Uncategorized Channels
+        for src_ch in source_guild.channels:
+            if src_ch.category is None:
+                existing = discord.utils.get(guild.channels, name=src_ch.name)
+                if not existing:
+                    if isinstance(src_ch, discord.TextChannel):
+                        await guild.create_text_channel(src_ch.name)
+                    elif isinstance(src_ch, discord.VoiceChannel):
+                        await guild.create_voice_channel(src_ch.name)
+                    updated_count += 1
+                    await asyncio.sleep(3)
+
+        success_embed = discord.Embed(
+            title="✅ Server Clone Complete!",
+            description=f"Successfully cloned **{updated_count}** channels and categories.\n\n*Press `Cmd + R` to refresh your sidebar.*",
+            color=discord.Color.green()
+        )
+        await interaction.edit_original_response(embed=success_embed)
+        return # Stop here, we don't need to do the custom layout stuff
+
+    # --- EXISTING LAYOUT LOGIC (If no ID is provided) ---
     selected_style = style.value if style else "sab"
     final_prefix = custom_prefix
     channel_designs = {}
     cat_design = None
 
-    # IF IMAGE IS UPLOADED
     if reference_image:
         await interaction.edit_original_response(content="📸 Reading the specific channel designs from your image...")
         image_bytes = await reference_image.read()
         channel_designs, cat_design = await extract_design_from_image(image_bytes)
         
-        # STOP the bot if OCR fails, don't fall back to | !
         if not channel_designs:
-            await interaction.edit_original_response(content="❌ **Error:** I couldn't read the text from your image. Discord's font and emojis are too hard for the OCR to read. Please use the `custom_prefix` option instead (e.g., type `[ 📚 ] • ` in the box).")
+            await interaction.edit_original_response(content="❌ **Error:** I couldn't read the text from your image. Please use the `custom_prefix` option instead.")
             return
 
     if final_prefix and not final_prefix.endswith(" "):
@@ -160,12 +228,8 @@ async def setup(
     )
     await interaction.edit_original_response(content=None, embed=embed)
     
-    guild = interaction.guild
-    updated_count = 0
-    
     for category_name, channels in SERVER_LAYOUT.items():
         
-        # --- 1. HANDLE CATEGORIES ---
         if cat_design:
             formatted_cat = f"{cat_design['prefix']}{category_name}{cat_design['suffix']}".strip()
         elif selected_style == "sab":
@@ -192,11 +256,9 @@ async def setup(
             except Exception:
                 pass
         
-        # --- 2. HANDLE CHANNELS ---
         for channel_name, is_voice in channels:
             emoji = SAB_EMOJIS.get(channel_name, "")
             
-            # Format the new name
             if channel_name in channel_designs:
                 design = channel_designs[channel_name]
                 full_name = f"{design['prefix']}{channel_name}{design['suffix']}".strip()
@@ -209,7 +271,6 @@ async def setup(
             else:
                 full_name = channel_name
 
-            # Find existing channel
             existing_channel = None
             for ch in guild.channels:
                 clean_ch = re.sub(r'[^\w\s-]', '', ch.name).strip().lower()
