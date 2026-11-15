@@ -4,7 +4,7 @@ from discord.ext import commands
 import os
 import asyncio
 import json
-import random # <-- Added this for the random designs
+import random
 from openai import AsyncOpenAI
 
 intents = discord.Intents.default()
@@ -73,7 +73,18 @@ async def build(interaction: discord.Interaction, prompt: str):
         )
         
         layout = json.loads(response.choices[0].message.content)
-        await interaction.edit_original_response(content="🔧 **Building your server now... (This takes a few minutes. Do not spam!)**")
+        
+        # --- PICK ONE DESIGN FOR THE WHOLE SERVER ---
+        formats = [
+            "〔{emoji}〕・{ch_name}",
+            "{emoji}┃{ch_name}",
+            "〘{emoji}〙・{ch_name}",
+            "{emoji}・{ch_name}"
+        ]
+        chosen_format = random.choice(formats)
+        # --------------------------------------------
+
+        await interaction.edit_original_response(content=f"🔧 **Building your server now...**\nUsing design: `{chosen_format}`\n*(This takes a few minutes. Do not spam!)*")
 
         count = 0
         
@@ -86,15 +97,8 @@ async def build(interaction: discord.Interaction, prompt: str):
                 emoji = ch.get('emoji', '')
                 ch_name = ch.get('name', 'channel').lower()
                 
-                # --- THIS IS THE RANDOM DESIGN PICKER ---
-                formats = [
-                    f"〔{emoji}〕・{ch_name}",
-                    f"{emoji}┃{ch_name}",
-                    f"〘{emoji}〙・{ch_name}",
-                    f"{emoji}・{ch_name}"
-                ]
-                full_name = random.choice(formats)
-                # ----------------------------------------
+                # Apply the ONE chosen format to every channel
+                full_name = chosen_format.format(emoji=emoji, ch_name=ch_name)
                 
                 if ch.get('type') == 'voice':
                     await interaction.guild.create_voice_channel(full_name, category=category)
@@ -104,7 +108,7 @@ async def build(interaction: discord.Interaction, prompt: str):
                 count += 1
                 await asyncio.sleep(3) 
 
-        await interaction.edit_original_response(content=f"✅ **Done!** Built **{count}** channels with random designs. Press `Cmd + R` to refresh Discord.")
+        await interaction.edit_original_response(content=f"✅ **Done!** Built **{count}** channels using the `{chosen_format}` design. Press `Cmd + R` to refresh Discord.")
 
     except Exception as e:
         await interaction.edit_original_response(content=f"❌ Error: {str(e)}")
