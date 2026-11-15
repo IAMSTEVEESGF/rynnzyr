@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Your API key is hardcoded here
 ai_client = AsyncOpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key="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" 
@@ -31,7 +32,7 @@ async def build(interaction: discord.Interaction, prompt: str):
 
     try:
         response = await ai_client.chat.completions.create(
-            model="llama3-8b-8192", 
+            model="openai/gpt-oss-20b", # <-- This is the only line that changed
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
