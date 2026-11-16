@@ -4,7 +4,7 @@ from discord.ext import commands
 import os
 import asyncio
 import json
-import random  # <-- Added for random design picking
+import random
 from openai import AsyncOpenAI
 
 intents = discord.Intents.default()
@@ -29,13 +29,25 @@ async def build(interaction: discord.Interaction, prompt: str):
     await interaction.response.defer()
     await interaction.edit_original_response(content="🏗️ **AI is designing your server...**")
 
+    # --- THE ULTIMATE PROMPT ---
     system_prompt = """
     You are a world-class Discord Server Architect. 
     Output ONLY JSON: {"categories": [{"name": "CATEGORY", "channels": [{"name": "channel-name", "emoji": "💬", "type": "text"}]}]}
-    RULES:
-    1. ORDER: IMPORTANT -> WELCOME -> GENERAL -> THEME SPECIFIC -> VOICE CHATS -> STAFF.
-    2. SPECIFIC EMOJIS: Match the theme perfectly (e.g., Minecraft = ⛏️, 🐷).
-    3. DENSITY: 5-8 categories, 4-7 channels per category.
+    
+    RULES FOR CATEGORIES (STRICT ORDER):
+    1. IMPORTANT (Rules, Announcements, Updates)
+    2. WELCOME (Welcome, Verify)
+    3. GENERAL (General, Media, Bots)
+    4. THEME SPECIFIC (Game/Community specific channels)
+    5. VOICE CHATS (All VCs)
+    6. STAFF (Staff Chat, Mod Logs, Admin Chat) - ALWAYS AT THE BOTTOM.
+    
+    RULES FOR CHANNELS & EMOJIS:
+    - You MUST create a channel named exactly "general". It MUST have the emoji 💬.
+    - You MUST create a channel named exactly "announcements". It MUST have the emoji 📣.
+    - DO NOT use the same emoji for every channel. 
+    - For all other channels, analyze the channel name and generate a highly specific, cool, and sensible emoji (e.g., for "mod-logs" use 🛡️, for "trading" use 💰, for "rules" use 📜, for "polls" use 📊).
+    - Make sure "mod-logs" or any log channels are inside the STAFF category, NOT in IMPORTANT/Announcements.
     """
 
     try:
@@ -50,8 +62,7 @@ async def build(interaction: discord.Interaction, prompt: str):
         
         layout = json.loads(response.choices[0].message.content)
         
-        # --- PICK ONE DESIGN FOR THE WHOLE SERVER ---
-        # \u00A0 is a Non-Breaking Space so Discord doesn't add hyphens
+        # Pick ONE design for the whole server
         NBSP = "\u00A0"
         formats = [
             f"〔{{emoji}}〕・{NBSP}{{name}}",
@@ -60,11 +71,10 @@ async def build(interaction: discord.Interaction, prompt: str):
             f"{{emoji}}・{NBSP}{{name}}"
         ]
         chosen_format = random.choice(formats)
-        # --------------------------------------------
 
         building_embed = discord.Embed(
             title="🔧 Building Your Server",
-            description=f"AI has finished designing. Applying the design pattern:\n`{chosen_format.format(emoji='💬', name='channel')}`",
+            description=f"AI is creating channels logically.\nUsing design: `{chosen_format.format(emoji='💬', name='channel')}`",
             color=discord.Color.green()
         )
         building_embed.add_field(name="Status", value="0 channels created", inline=False)
@@ -84,10 +94,16 @@ async def build(interaction: discord.Interaction, prompt: str):
             await asyncio.sleep(3)
             
             for ch in cat.get("channels", []):
-                emoji = ch.get('emoji', '💬')
                 ch_name = ch.get('name', 'channel').lower()
+                emoji = ch.get('emoji', '💬')
                 
-                # APPLY THE SINGLE CHOSEN FORMAT
+                # --- PYTHON FAILSAFE FOR SPECIFIC EMOJIS ---
+                if "general" in ch_name:
+                    emoji = "💬"
+                elif "announcement" in ch_name:
+                    emoji = "📣"
+                # -------------------------------------------
+
                 full_name = chosen_format.format(emoji=emoji, name=ch_name)
                 
                 try:
@@ -96,7 +112,7 @@ async def build(interaction: discord.Interaction, prompt: str):
                     else:
                         await interaction.guild.create_text_channel(full_name, category=category)
                 except discord.HTTPException:
-                    await asyncio.sleep(10) # Wait if rate limited
+                    await asyncio.sleep(10)
                     if ch.get('type') == 'voice':
                         await interaction.guild.create_voice_channel(full_name, category=category)
                     else:
