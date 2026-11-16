@@ -4,6 +4,7 @@ from discord.ext import commands
 import os
 import asyncio
 import json
+import random
 from openai import AsyncOpenAI
 
 intents = discord.Intents.default()
@@ -26,18 +27,18 @@ async def build(interaction: discord.Interaction, prompt: str):
         return
 
     await interaction.response.defer()
-    await interaction.edit_original_response(content="🏗️ **AI is designing your server based on the exact template...**")
+    await interaction.edit_original_response(content="🏗️ **AI is designing your server based on the Master Template...**")
 
-    # --- THE STRICT TEMPLATE ---
     system_prompt = """
     You are a Discord Server Architect. You MUST follow the strict template below.
-    The user will give you a theme (e.g., Minecraft, Anime, Trading, Roblox).
+    The user will give you a theme (e.g., Minecraft, Anime, Trading).
     Output ONLY a JSON object.
     
     RULES:
     1. KEEP the exact category names, channel names, emojis, and ORDER from the template.
-    2. ONLY modify the parts marked with `[ADAPT]`. Make them fit the user's theme.
+    2. ONLY modify the parts marked with `[ADAPT]`.
     3. For `[ADAPT]` categories, use highly relevant emojis.
+    4. general MUST have 💬. announcements MUST have 📣.
     
     TEMPLATE:
     {
@@ -168,18 +169,19 @@ async def build(interaction: discord.Interaction, prompt: str):
         
         layout = json.loads(response.choices[0].message.content)
         
-        # NBSP (Non-Breaking Space) stops Discord from adding hyphens
-        NBSP = "\u00A0"
-        
-        # THE EXACT FORMATS WITH NBSP
-        # Channel: [ 📚 ] • staff-rules
-        chosen_format = f"[{NBSP}{{emoji}}{NBSP}]{NBSP}•{NBSP}{{name}}"
-        # Category: ---- 《STAFF GENERAL》 ----
-        cat_format = f"----{NBSP}《{{name}}》{NBSP}----"
+        # --- YOUR EXACT 4 FORMATS (NO SPACES, FULL-WIDTH CHARS) ---
+        formats = [
+            "〔{emoji}〕・{ch_name}",
+            "{emoji}┃{ch_name}",
+            "〘{emoji}〙・{ch_name}",
+            "{emoji}・{ch_name}"
+        ]
+        chosen_format = random.choice(formats)
+        # --------------------------------------------------------
 
         building_embed = discord.Embed(
             title="🔧 Building Your Server",
-            description="Using the Master Template layout.",
+            description=f"Using format: `{chosen_format.format(emoji='💬', ch_name='channel')}`",
             color=discord.Color.green()
         )
         building_embed.add_field(name="Status", value="0 channels created", inline=False)
@@ -188,7 +190,9 @@ async def build(interaction: discord.Interaction, prompt: str):
         count = 0
         
         for cat in layout.get("categories", []):
-            cat_name = cat_format.format(name=cat.get('name', 'CATEGORY'))
+            # Category format (Using NBSP so Discord doesn't hyphenate it)
+            NBSP = "\u00A0"
+            cat_name = f"----{NBSP}《{cat.get('name', 'CATEGORY')}》{NBSP}----"
             
             try:
                 category = await interaction.guild.create_category(cat_name)
@@ -199,16 +203,17 @@ async def build(interaction: discord.Interaction, prompt: str):
             await asyncio.sleep(3)
             
             for ch in cat.get("channels", []):
-                ch_name = ch.get('name', 'channel').lower()
+                ch_name = ch.get('name', 'channel').lower().replace(" ", "-")
                 emoji = ch.get('emoji', '💬')
                 
-                # FORCE the specific emojis for general and announcements
+                # Force specific emojis
                 if ch_name == "general":
                     emoji = "💬"
                 elif "announcement" in ch_name and "staff" not in ch_name and "content" not in ch_name:
                     emoji = "📣"
 
-                full_name = chosen_format.format(emoji=emoji, name=ch_name)
+                # Apply the chosen format
+                full_name = chosen_format.format(emoji=emoji, ch_name=ch_name)
                 
                 try:
                     if ch.get('type') == 'voice':
@@ -235,6 +240,7 @@ async def build(interaction: discord.Interaction, prompt: str):
             description=f"Your layout has been generated with **{count}** channels.",
             color=discord.Color.green()
         )
+        success_embed.add_field(name="Design Used", value=f"`{chosen_format.format(emoji='💬', ch_name='channel')}`", inline=False)
         success_embed.add_field(name="Next Step", value="Press `Cmd + R` (Mac) or `Ctrl + R` (Windows) to refresh your Discord sidebar.", inline=False)
         
         await interaction.edit_original_response(embed=success_embed)
