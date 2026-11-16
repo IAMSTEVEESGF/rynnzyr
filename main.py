@@ -23,11 +23,11 @@ async def on_ready():
 @bot.tree.command(name="build", description="Build a perfect, professional server layout")
 async def build(interaction: discord.Interaction, prompt: str):
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ Admin only.", ephemeral=True)
+        await interaction.response.send_message("❌ Administrators only.", ephemeral=True)
         return
 
     await interaction.response.defer()
-    await interaction.edit_original_response(content="🏗️ **AI is designing your server based on the Master Template...**")
+    await interaction.edit_original_response(content="🏗️ **NoxHelper is designing your server...**")
 
     system_prompt = """
     You are a Discord Server Architect. You MUST follow the strict template below.
@@ -236,7 +236,7 @@ async def build(interaction: discord.Interaction, prompt: str):
                 await asyncio.sleep(3.5) 
 
         success_embed = discord.Embed(
-            title="✅ Server Built Successfully!",
+            title="✨ Noxhelper successfully created your server!",
             description=f"Your layout has been generated with **{count}** channels.",
             color=discord.Color.green()
         )
@@ -246,7 +246,7 @@ async def build(interaction: discord.Interaction, prompt: str):
         await interaction.edit_original_response(embed=success_embed)
 
     except Exception as e:
-        await interaction.edit_original_response(content=f"❌ **AI Error:** {str(e)}")
+        await interaction.edit_original_response(content=f"❌ **Noxhelper Error:** {str(e)}")
 
 if __name__ == "__main__":
     bot.run(os.getenv("DISCORD_TOKEN"))
