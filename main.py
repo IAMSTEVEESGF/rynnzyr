@@ -27,27 +27,135 @@ async def build(interaction: discord.Interaction, prompt: str):
         return
 
     await interaction.response.defer()
-    await interaction.edit_original_response(content="🏗️ **AI is designing your server...**")
+    await interaction.edit_original_response(content="🏗️ **AI is designing your server based on the Master Template...**")
 
-    # --- THE ULTIMATE PROMPT ---
+    # --- THE STRICT MASTER TEMPLATE PROMPT ---
     system_prompt = """
-    You are a world-class Discord Server Architect. 
-    Output ONLY JSON: {"categories": [{"name": "CATEGORY", "channels": [{"name": "channel-name", "emoji": "💬", "type": "text"}]}]}
+    You are a Discord Server Architect. You MUST follow a strict template provided below.
+    The user will give you a theme (e.g., Minecraft, Anime, Trading, Roblox).
+    You must output ONLY a JSON object.
     
-    RULES FOR CATEGORIES (STRICT ORDER):
-    1. IMPORTANT (Rules, Announcements, Updates)
-    2. WELCOME (Welcome, Verify)
-    3. GENERAL (General, Media, Bots)
-    4. THEME SPECIFIC (Game/Community specific channels)
-    5. VOICE CHATS (All VCs)
-    6. STAFF (Staff Chat, Mod Logs, Admin Chat) - ALWAYS AT THE BOTTOM.
+    RULES:
+    1. KEEP the exact category names, channel names, emojis, and ORDER from the template.
+    2. ONLY modify the parts marked with `[ADAPT THIS]`.
+    3. For `[ADAPT THIS]` categories, create 3-5 channels related to the user's theme. Use highly relevant emojis.
+    4. Keep `sab-leaks` but change the word `sab` to the user's theme (e.g., `minecraft-leaks`).
     
-    RULES FOR CHANNELS & EMOJIS:
-    - You MUST create a channel named exactly "general". It MUST have the emoji 💬.
-    - You MUST create a channel named exactly "announcements". It MUST have the emoji 📣.
-    - DO NOT use the same emoji for every channel. 
-    - For all other channels, analyze the channel name and generate a highly specific, cool, and sensible emoji (e.g., for "mod-logs" use 🛡️, for "trading" use 💰, for "rules" use 📜, for "polls" use 📊).
-    - Make sure "mod-logs" or any log channels are inside the STAFF category, NOT in IMPORTANT/Announcements.
+    MASTER TEMPLATE TO FOLLOW:
+    {
+      "categories": [
+        {
+          "name": "STAFF GENERAL",
+          "channels": [
+            {"name": "staff-rules", "emoji": "📚", "type": "text"},
+            {"name": "staff-announcements", "emoji": "📣", "type": "text"},
+            {"name": "staff-logs", "emoji": "🔖", "type": "text"},
+            {"name": "staff-chat", "emoji": "💬", "type": "text"},
+            {"name": "staff-promotions", "emoji": "🎉", "type": "text"},
+            {"name": "staff-demotions", "emoji": "⚠️", "type": "text"},
+            {"name": "STAFF VC", "emoji": "🎙️", "type": "voice"}
+          ]
+        },
+        {
+          "name": "WELCOME",
+          "channels": [
+            {"name": "invite-tracker", "emoji": "🛤️", "type": "text"},
+            {"name": "welcome", "emoji": "👋", "type": "text"},
+            {"name": "goodbye", "emoji": "🕊️", "type": "text"}
+          ]
+        },
+        {
+          "name": "IMPORTANT",
+          "channels": [
+            {"name": "rules", "emoji": "📚", "type": "text"},
+            {"name": "announcements", "emoji": "📣", "type": "text"},
+            {"name": "[ADAPT THIS]-leaks", "emoji": "📊", "type": "text"},
+            {"name": "server-boosts", "emoji": "🚀", "type": "text"},
+            {"name": "boosters-rewards", "emoji": "🧨", "type": "text"},
+            {"name": "polls", "emoji": "🥇", "type": "text"},
+            {"name": "scammers", "emoji": "⚠️", "type": "text"},
+            {"name": "applications", "emoji": "📝", "type": "text"},
+            {"name": "server-updates", "emoji": "🔄", "type": "text"},
+            {"name": "hall-of-fame", "emoji": "🥇", "type": "text"},
+            {"name": "content", "emoji": "🎥", "type": "text"},
+            {"name": "support-ticket", "emoji": "🎟️", "type": "text"}
+          ]
+        },
+        {
+          "name": "[ADAPT THIS CATEGORY 1]",
+          "channels": [
+            {"name": "[ADAPT THIS]", "emoji": "🤝", "type": "text"},
+            {"name": "[ADAPT THIS]", "emoji": "🎫", "type": "text"},
+            {"name": "[ADAPT THIS]", "emoji": "✅", "type": "text"}
+          ]
+        },
+        {
+          "name": "GIVEAWAYS",
+          "channels": [
+            {"name": "giveaways", "emoji": "🎉", "type": "text"},
+            {"name": "flash-giveaways", "emoji": "🎁", "type": "text"},
+            {"name": "giveaways-vouches", "emoji": "🎁", "type": "text"},
+            {"name": "GIVEAWAYS VC", "emoji": "🏆", "type": "voice"}
+          ]
+        },
+        {
+          "name": "GENERAL",
+          "channels": [
+            {"name": "general", "emoji": "💬", "type": "text"},
+            {"name": "media", "emoji": "🖼️", "type": "text"},
+            {"name": "commands", "emoji": "⚙️", "type": "text"},
+            {"name": "levels", "emoji": "📈", "type": "text"},
+            {"name": "suggestions", "emoji": "🛠️", "type": "text"}
+          ]
+        },
+        {
+          "name": "[ADAPT THIS CATEGORY 2]",
+          "channels": [
+            {"name": "[ADAPT THIS]", "emoji": "⚔️", "type": "text"},
+            {"name": "[ADAPT THIS]", "emoji": "👑", "type": "text"},
+            {"name": "[ADAPT THIS]", "emoji": "💰", "type": "text"},
+            {"name": "[ADAPT THIS]", "emoji": "⭐", "type": "text"},
+            {"name": "[ADAPT THIS]", "emoji": "💎", "type": "text"},
+            {"name": "duel-requests", "emoji": "⚔️", "type": "text"},
+            {"name": "win-or-loss", "emoji": "⚖️", "type": "text"},
+            {"name": "owners-vouches", "emoji": "👑", "type": "text"},
+            {"name": "staff-vouches", "emoji": "📊", "type": "text"},
+            {"name": "vouches", "emoji": "✅", "type": "text"}
+          ]
+        },
+        {
+          "name": "CONTENT CREATORS",
+          "channels": [
+            {"name": "content-rules", "emoji": "📚", "type": "text"},
+            {"name": "content-announcements", "emoji": "📣", "type": "text"},
+            {"name": "creators-chat", "emoji": "🎥", "type": "text"},
+            {"name": "content-ideas", "emoji": "✨", "type": "text"},
+            {"name": "Creators Vc", "emoji": "🎙️", "type": "voice"}
+          ]
+        },
+        {
+          "name": "PARTNERSHIP & SELF PROMO",
+          "channels": [
+            {"name": "partnerships", "emoji": "🤝", "type": "text"},
+            {"name": "self-promo", "emoji": "⭐", "type": "text"},
+            {"name": "paid-promo", "emoji": "✨", "type": "text"},
+            {"name": "SELF PROMOTERS", "emoji": "🎙️", "type": "voice"}
+          ]
+        },
+        {
+          "name": "VOICE CHATS",
+          "channels": [
+            {"name": "OWNERS VC", "emoji": "👑", "type": "voice"},
+            {"name": "VC 1", "emoji": "🎙️", "type": "voice"},
+            {"name": "VC 2", "emoji": "🎙️", "type": "voice"},
+            {"name": "STAGE", "emoji": "🎪", "type": "voice"},
+            {"name": "SAB VC", "emoji": "💰", "type": "voice"},
+            {"name": "DUEL VC", "emoji": "⚔️", "type": "voice"},
+            {"name": "MUSIC", "emoji": "🎵", "type": "voice"}
+          ]
+        }
+      ]
+    }
     """
 
     try:
@@ -62,19 +170,14 @@ async def build(interaction: discord.Interaction, prompt: str):
         
         layout = json.loads(response.choices[0].message.content)
         
-        # Pick ONE design for the whole server
+        # The exact design from your screenshot
         NBSP = "\u00A0"
-        formats = [
-            f"〔{{emoji}}〕・{NBSP}{{name}}",
-            f"{{emoji}}┃{{name}}",
-            f"〘{{emoji}}〙・{NBSP}{{name}}",
-            f"{{emoji}}・{NBSP}{{name}}"
-        ]
-        chosen_format = random.choice(formats)
+        chosen_format = f"[{{emoji}}]{NBSP}•{NBSP}{{name}}"
+        cat_format = f"----{NBSP}《{{name}}》{NBSP}----"
 
         building_embed = discord.Embed(
             title="🔧 Building Your Server",
-            description=f"AI is creating channels logically.\nUsing design: `{chosen_format.format(emoji='💬', name='channel')}`",
+            description=f"Using the Master Template layout.",
             color=discord.Color.green()
         )
         building_embed.add_field(name="Status", value="0 channels created", inline=False)
@@ -83,7 +186,7 @@ async def build(interaction: discord.Interaction, prompt: str):
         count = 0
         
         for cat in layout.get("categories", []):
-            cat_name = f"----{NBSP}《{cat.get('name', 'CATEGORY')}》{NBSP}----"
+            cat_name = cat_format.format(name=cat.get('name', 'CATEGORY'))
             
             try:
                 category = await interaction.guild.create_category(cat_name)
@@ -97,12 +200,11 @@ async def build(interaction: discord.Interaction, prompt: str):
                 ch_name = ch.get('name', 'channel').lower()
                 emoji = ch.get('emoji', '💬')
                 
-                # --- PYTHON FAILSAFE FOR SPECIFIC EMOJIS ---
-                if "general" in ch_name:
+                # FORCE the specific emojis for general and announcements
+                if ch_name == "general":
                     emoji = "💬"
-                elif "announcement" in ch_name:
+                elif "announcement" in ch_name and "staff" not in ch_name and "content" not in ch_name:
                     emoji = "📣"
-                # -------------------------------------------
 
                 full_name = chosen_format.format(emoji=emoji, name=ch_name)
                 
@@ -128,10 +230,9 @@ async def build(interaction: discord.Interaction, prompt: str):
 
         success_embed = discord.Embed(
             title="✅ Server Built Successfully!",
-            description=f"Your professional layout has been generated with **{count}** channels.",
+            description=f"Your layout has been generated with **{count}** channels.",
             color=discord.Color.green()
         )
-        success_embed.add_field(name="Design Used", value=f"`{chosen_format.format(emoji='💬', name='channel')}`", inline=False)
         success_embed.add_field(name="Next Step", value="Press `Cmd + R` (Mac) or `Ctrl + R` (Windows) to refresh your Discord sidebar.", inline=False)
         
         await interaction.edit_original_response(embed=success_embed)
