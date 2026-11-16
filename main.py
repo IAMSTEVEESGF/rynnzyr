@@ -4,7 +4,6 @@ from discord.ext import commands
 import os
 import asyncio
 import json
-import random
 from openai import AsyncOpenAI
 
 intents = discord.Intents.default()
@@ -27,21 +26,20 @@ async def build(interaction: discord.Interaction, prompt: str):
         return
 
     await interaction.response.defer()
-    await interaction.edit_original_response(content="🏗️ **AI is designing your server based on the Master Template...**")
+    await interaction.edit_original_response(content="🏗️ **AI is designing your server based on the exact template...**")
 
-    # --- THE STRICT MASTER TEMPLATE PROMPT ---
+    # --- THE STRICT TEMPLATE ---
     system_prompt = """
-    You are a Discord Server Architect. You MUST follow a strict template provided below.
+    You are a Discord Server Architect. You MUST follow the strict template below.
     The user will give you a theme (e.g., Minecraft, Anime, Trading, Roblox).
-    You must output ONLY a JSON object.
+    Output ONLY a JSON object.
     
     RULES:
     1. KEEP the exact category names, channel names, emojis, and ORDER from the template.
-    2. ONLY modify the parts marked with `[ADAPT THIS]`.
-    3. For `[ADAPT THIS]` categories, create 3-5 channels related to the user's theme. Use highly relevant emojis.
-    4. Keep `sab-leaks` but change the word `sab` to the user's theme (e.g., `minecraft-leaks`).
+    2. ONLY modify the parts marked with `[ADAPT]`. Make them fit the user's theme.
+    3. For `[ADAPT]` categories, use highly relevant emojis.
     
-    MASTER TEMPLATE TO FOLLOW:
+    TEMPLATE:
     {
       "categories": [
         {
@@ -69,7 +67,7 @@ async def build(interaction: discord.Interaction, prompt: str):
           "channels": [
             {"name": "rules", "emoji": "📚", "type": "text"},
             {"name": "announcements", "emoji": "📣", "type": "text"},
-            {"name": "[ADAPT THIS]-leaks", "emoji": "📊", "type": "text"},
+            {"name": "[ADAPT]-leaks", "emoji": "📊", "type": "text"},
             {"name": "server-boosts", "emoji": "🚀", "type": "text"},
             {"name": "boosters-rewards", "emoji": "🧨", "type": "text"},
             {"name": "polls", "emoji": "🥇", "type": "text"},
@@ -82,11 +80,11 @@ async def build(interaction: discord.Interaction, prompt: str):
           ]
         },
         {
-          "name": "[ADAPT THIS CATEGORY 1]",
+          "name": "[ADAPT] CATEGORY 1",
           "channels": [
-            {"name": "[ADAPT THIS]", "emoji": "🤝", "type": "text"},
-            {"name": "[ADAPT THIS]", "emoji": "🎫", "type": "text"},
-            {"name": "[ADAPT THIS]", "emoji": "✅", "type": "text"}
+            {"name": "[ADAPT]", "emoji": "🤝", "type": "text"},
+            {"name": "[ADAPT]", "emoji": "🎫", "type": "text"},
+            {"name": "[ADAPT]", "emoji": "✅", "type": "text"}
           ]
         },
         {
@@ -109,13 +107,13 @@ async def build(interaction: discord.Interaction, prompt: str):
           ]
         },
         {
-          "name": "[ADAPT THIS CATEGORY 2]",
+          "name": "[ADAPT] CATEGORY 2",
           "channels": [
-            {"name": "[ADAPT THIS]", "emoji": "⚔️", "type": "text"},
-            {"name": "[ADAPT THIS]", "emoji": "👑", "type": "text"},
-            {"name": "[ADAPT THIS]", "emoji": "💰", "type": "text"},
-            {"name": "[ADAPT THIS]", "emoji": "⭐", "type": "text"},
-            {"name": "[ADAPT THIS]", "emoji": "💎", "type": "text"},
+            {"name": "[ADAPT]", "emoji": "⚔️", "type": "text"},
+            {"name": "[ADAPT]", "emoji": "👑", "type": "text"},
+            {"name": "[ADAPT]", "emoji": "💰", "type": "text"},
+            {"name": "[ADAPT]", "emoji": "⭐", "type": "text"},
+            {"name": "[ADAPT]", "emoji": "💎", "type": "text"},
             {"name": "duel-requests", "emoji": "⚔️", "type": "text"},
             {"name": "win-or-loss", "emoji": "⚖️", "type": "text"},
             {"name": "owners-vouches", "emoji": "👑", "type": "text"},
@@ -170,14 +168,18 @@ async def build(interaction: discord.Interaction, prompt: str):
         
         layout = json.loads(response.choices[0].message.content)
         
-        # The exact design from your screenshot
+        # NBSP (Non-Breaking Space) stops Discord from adding hyphens
         NBSP = "\u00A0"
-        chosen_format = f"[{{emoji}}]{NBSP}•{NBSP}{{name}}"
+        
+        # THE EXACT FORMATS WITH NBSP
+        # Channel: [ 📚 ] • staff-rules
+        chosen_format = f"[{NBSP}{{emoji}}{NBSP}]{NBSP}•{NBSP}{{name}}"
+        # Category: ---- 《STAFF GENERAL》 ----
         cat_format = f"----{NBSP}《{{name}}》{NBSP}----"
 
         building_embed = discord.Embed(
             title="🔧 Building Your Server",
-            description=f"Using the Master Template layout.",
+            description="Using the Master Template layout.",
             color=discord.Color.green()
         )
         building_embed.add_field(name="Status", value="0 channels created", inline=False)
@@ -226,7 +228,7 @@ async def build(interaction: discord.Interaction, prompt: str):
                     building_embed.set_field_at(0, name="Status", value=f"✅ {count} channels created...", inline=False)
                     await interaction.edit_original_response(embed=building_embed)
                 
-                await asyncio.sleep(4) 
+                await asyncio.sleep(3.5) 
 
         success_embed = discord.Embed(
             title="✅ Server Built Successfully!",
