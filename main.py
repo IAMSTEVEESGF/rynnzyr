@@ -4,6 +4,7 @@ from discord.ext import commands
 import os
 import asyncio
 import json
+import random  # <-- Added for random design picking
 from openai import AsyncOpenAI
 
 intents = discord.Intents.default()
@@ -22,29 +23,19 @@ async def on_ready():
 @bot.tree.command(name="build", description="Build a perfect, professional server layout")
 async def build(interaction: discord.Interaction, prompt: str):
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ You must be an Administrator to use this.", ephemeral=True)
-        return
-
-    if len(prompt.strip()) < 10:
-        await interaction.response.send_message("❌ Please provide a more detailed prompt.", ephemeral=True)
+        await interaction.response.send_message("❌ Admin only.", ephemeral=True)
         return
 
     await interaction.response.defer()
-    loading_embed = discord.Embed(
-        title="🏗️ Architecting Your Server",
-        description="**AI is analyzing your request...**\nGenerating categories, sorting channels, and selecting the perfect emojis.",
-        color=discord.Color.blurple()
-    )
-    await interaction.edit_original_response(embed=loading_embed)
+    await interaction.edit_original_response(content="🏗️ **AI is designing your server...**")
 
     system_prompt = """
     You are a world-class Discord Server Architect. 
-    Output ONLY a JSON object: {"categories": [{"name": "CATEGORY NAME", "channels": [{"name": "channel-name", "emoji": "💬", "type": "text"}]}]}
-    
+    Output ONLY JSON: {"categories": [{"name": "CATEGORY", "channels": [{"name": "channel-name", "emoji": "💬", "type": "text"}]}]}
     RULES:
-    1. PERFECT ORDER: IMPORTANT -> WELCOME -> GENERAL -> THEME SPECIFIC -> VOICE CHATS -> STAFF (bottom).
+    1. ORDER: IMPORTANT -> WELCOME -> GENERAL -> THEME SPECIFIC -> VOICE CHATS -> STAFF.
     2. SPECIFIC EMOJIS: Match the theme perfectly (e.g., Minecraft = ⛏️, 🐷).
-    3. DENSITY: Create 5 to 8 categories, and 4 to 7 channels per category.
+    3. DENSITY: 5-8 categories, 4-7 channels per category.
     """
 
     try:
@@ -59,44 +50,53 @@ async def build(interaction: discord.Interaction, prompt: str):
         
         layout = json.loads(response.choices[0].message.content)
         
+        # --- PICK ONE DESIGN FOR THE WHOLE SERVER ---
+        # \u00A0 is a Non-Breaking Space so Discord doesn't add hyphens
+        NBSP = "\u00A0"
+        formats = [
+            f"〔{{emoji}}〕・{NBSP}{{name}}",
+            f"{{emoji}}┃{{name}}",
+            f"〘{{emoji}}〙・{NBSP}{{name}}",
+            f"{{emoji}}・{NBSP}{{name}}"
+        ]
+        chosen_format = random.choice(formats)
+        # --------------------------------------------
+
         building_embed = discord.Embed(
-            title="🔧 Building Your Server (Please Wait)",
-            description="Starting build process...",
+            title="🔧 Building Your Server",
+            description=f"AI has finished designing. Applying the design pattern:\n`{chosen_format.format(emoji='💬', name='channel')}`",
             color=discord.Color.green()
         )
-        building_embed.add_field(name="Design Style", value="`---- 《Category》 ----`\n`[ Emoji ] • channel`", inline=False)
         building_embed.add_field(name="Status", value="0 channels created", inline=False)
         await interaction.edit_original_response(embed=building_embed)
 
         count = 0
         
         for cat in layout.get("categories", []):
-            cat_name = f"---- 《{cat.get('name', 'CATEGORY')}》 ----"
+            cat_name = f"----{NBSP}《{cat.get('name', 'CATEGORY')}》{NBSP}----"
             
-            # TRY/CATCH FOR CATEGORY CREATION
             try:
                 category = await interaction.guild.create_category(cat_name)
             except discord.HTTPException:
-                await asyncio.sleep(5) # Wait if rate limited
+                await asyncio.sleep(5)
                 category = await interaction.guild.create_category(cat_name)
                 
-            await asyncio.sleep(4) # Breathe between categories
+            await asyncio.sleep(3)
             
             for ch in cat.get("channels", []):
                 emoji = ch.get('emoji', '💬')
                 ch_name = ch.get('name', 'channel').lower()
-                full_name = f"[ {emoji} ] • {ch_name}"
                 
-                # TRY/CATCH FOR CHANNEL CREATION
+                # APPLY THE SINGLE CHOSEN FORMAT
+                full_name = chosen_format.format(emoji=emoji, name=ch_name)
+                
                 try:
                     if ch.get('type') == 'voice':
                         await interaction.guild.create_voice_channel(full_name, category=category)
                     else:
                         await interaction.guild.create_text_channel(full_name, category=category)
-                except discord.HTTPException as e:
-                    # If Discord says "Slow down", we wait 10 seconds and try again
-                    print(f"Rate limited! Waiting 10s... {e}")
-                    await asyncio.sleep(10)
+                except discord.HTTPException:
+                    await asyncio.sleep(10) # Wait if rate limited
                     if ch.get('type') == 'voice':
                         await interaction.guild.create_voice_channel(full_name, category=category)
                     else:
@@ -104,20 +104,18 @@ async def build(interaction: discord.Interaction, prompt: str):
                 
                 count += 1
                 
-                # UPDATE THE EMBED EVERY 5 CHANNELS
                 if count % 5 == 0:
-                    building_embed.set_field_at(1, name="Status", value=f"✅ {count} channels created...", inline=False)
+                    building_embed.set_field_at(0, name="Status", value=f"✅ {count} channels created...", inline=False)
                     await interaction.edit_original_response(embed=building_embed)
                 
-                # MAXIMUM SAFETY DELAY
-                await asyncio.sleep(5) 
+                await asyncio.sleep(4) 
 
-        # Success Embed
         success_embed = discord.Embed(
             title="✅ Server Built Successfully!",
             description=f"Your professional layout has been generated with **{count}** channels.",
             color=discord.Color.green()
         )
+        success_embed.add_field(name="Design Used", value=f"`{chosen_format.format(emoji='💬', name='channel')}`", inline=False)
         success_embed.add_field(name="Next Step", value="Press `Cmd + R` (Mac) or `Ctrl + R` (Windows) to refresh your Discord sidebar.", inline=False)
         
         await interaction.edit_original_response(embed=success_embed)
