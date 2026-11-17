@@ -19,7 +19,7 @@ ai_client = AsyncOpenAI(
 
 app = FastAPI()
 last_actions = {}
-bot_loop = None # We need to store the bot's event loop
+bot_loop = None 
 
 class ChatRequest(BaseModel):
     guild_id: int
@@ -29,19 +29,23 @@ class ChatRequest(BaseModel):
 async def serve_website():
     return HTMLResponse(content=open("index.html", "r").read() if os.path.exists("index.html") else "<h1>Website loading...</h1>")
 
-# NEW ENDPOINT: Gets a list of all servers the bot is in
 @app.get("/api/guilds")
 async def get_guilds():
+    # Wait up to 5 seconds for the bot to be ready if it's still booting
+    for _ in range(5):
+        if bot.is_ready() and len(bot.guilds) > 0:
+            break
+        await asyncio.sleep(1)
+        
     if not bot.is_ready():
-        return {"guilds": []}
+        return {"guilds": [], "error": "Bot is still booting up..."}
     return {"guilds": [{"id": g.id, "name": g.name} for g in bot.guilds]}
 
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     if not bot.is_ready() or not bot_loop:
-        return {"error": "Bot is still starting up on Railway. Wait 10 seconds and refresh."}
+        return {"error": "Bot is still starting up. Wait 10 seconds."}
         
-    # We must run the async Discord code inside the BOT'S loop, not the web server's loop
     future = asyncio.run_coroutine_threadsafe(handle_chat(req.guild_id, req.prompt), bot_loop)
     return future.result()
 
@@ -59,12 +63,16 @@ async def handle_chat(guild_id, prompt):
         return {"error": "Bot is not in this server!"}
         
     state_lines = []
+    # ONLY SEND 25 CHANNELS MAX TO PREVENT TOKEN LIMIT
+    count = 0
     for ch in guild.channels:
         if isinstance(ch, discord.CategoryChannel): continue
         cat_name = ch.category.name if ch.category else "None"
         state_lines.append(f"{ch.id}:{ch.name}|{cat_name}")
+        count += 1
+        if count >= 25: break
         
-    server_state_str = "\n".join(state_lines[:40])
+    server_state_str = "\n".join(state_lines)
     
     system_prompt = f"""
     You are an AI Discord manager. 
@@ -85,7 +93,7 @@ async def handle_chat(guild_id, prompt):
         response = await ai_client.chat.completions.create(
             model="openai/gpt-oss-20b", 
             messages=[{"role": "system", "content": system_prompt}],
-            max_tokens=1500 
+            max_tokens=1000 # Capped to prevent 413 error
         )
         
         raw = response.choices[0].message.content.replace("```", "").upper()
@@ -158,7 +166,7 @@ async def handle_undo(guild_id):
 @bot.event
 async def on_ready():
     global bot_loop
-    bot_loop = asyncio.get_running_loop() # Save the bot's loop
+    bot_loop = asyncio.get_running_loop()
     print(f"✅ Bot online as {bot.user}")
 
 def run_web():
