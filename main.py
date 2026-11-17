@@ -4,7 +4,6 @@ from discord.ext import commands
 import os
 import asyncio
 import json
-import random
 from openai import AsyncOpenAI
 
 intents = discord.Intents.default()
@@ -15,238 +14,123 @@ ai_client = AsyncOpenAI(
     api_key="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" 
 )
 
+# Store the last action so we can Undo it
+last_actions = {}
+
+# --- THE UNDO BUTTON ---
+class UndoView(discord.ui.View):
+    def __init__(self, guild_id):
+        super().__init__(timeout=300) # Button lasts for 5 minutes
+        self.guild_id = guild_id
+
+    @discord.ui.button(label="Undo", style=discord.ButtonStyle.danger)
+    async def undo_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.guild_id in last_actions:
+            await interaction.response.defer()
+            guild = interaction.guild
+            
+            # Restore the old names
+            for channel_id, old_name in last_actions[self.guild_id].items():
+                channel = guild.get_channel(channel_id)
+                if channel:
+                    await channel.edit(name=old_name)
+                    await asyncio.sleep(2) # Avoid rate limits
+            
+            del last_actions[self.guild_id]
+            await interaction.edit_original_response(content="✅ Successfully undid the last action.", view=None)
+        else:
+            await interaction.response.send_message("❌ Nothing to undo!", ephemeral=True)
+
 @bot.event
 async def on_ready():
     await bot.tree.sync()
-    print("✅ Professional AI Architect is online!")
+    print("✅ Bot online!")
 
-@bot.tree.command(name="build", description="Build a perfect, professional server layout")
-async def build(interaction: discord.Interaction, prompt: str):
+# --- THE SMART COMMAND ---
+@bot.tree.command(name="tidy", description="Use AI to tidy up your channels")
+@app_commands.describe(prompt="E.g., 'Move all old channels to an ARCHIVE category' or 'Make everything emoji based'")
+async def tidy(interaction: discord.Interaction, prompt: str):
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ Administrators only.", ephemeral=True)
+        await interaction.response.send_message("❌ Admin only.", ephemeral=True)
         return
 
     await interaction.response.defer()
-    await interaction.edit_original_response(content="🏗️ **NoxHelper is designing your server...**")
+    await interaction.edit_original_response(content="🧠 **AI is analyzing your server...**")
 
-    system_prompt = """
-    You are a Discord Server Architect. You MUST follow the strict template below.
-    The user will give you a theme (e.g., Minecraft, Anime, Trading).
-    Output ONLY a JSON object.
+    guild = interaction.guild
     
-    RULES:
-    1. KEEP the exact category names, channel names, emojis, and ORDER from the template.
-    2. ONLY modify the parts marked with `[ADAPT]`.
-    3. For `[ADAPT]` categories, use highly relevant emojis.
-    4. general MUST have 💬. announcements MUST have 📣.
+    # Gather current server structure for the AI to read
+    server_state = []
+    for cat in guild.categories:
+        cat_channels = [ch.name for ch in cat.channels]
+        server_state.append(f"Category: {cat.name} | Channels: {', '.join(cat_channels)}")
+        
+    system_prompt = f"""
+    You are an AI Discord manager. The user wants to tidy up their server. 
+    Here is the current server state:
+    {chr(10).join(server_state)}
     
-    TEMPLATE:
-    {
-      "categories": [
-        {
-          "name": "STAFF GENERAL",
-          "channels": [
-            {"name": "staff-rules", "emoji": "📚", "type": "text"},
-            {"name": "staff-announcements", "emoji": "📣", "type": "text"},
-            {"name": "staff-logs", "emoji": "🔖", "type": "text"},
-            {"name": "staff-chat", "emoji": "💬", "type": "text"},
-            {"name": "staff-promotions", "emoji": "🎉", "type": "text"},
-            {"name": "staff-demotions", "emoji": "⚠️", "type": "text"},
-            {"name": "STAFF VC", "emoji": "🎙️", "type": "voice"}
-          ]
-        },
-        {
-          "name": "WELCOME",
-          "channels": [
-            {"name": "invite-tracker", "emoji": "🛤️", "type": "text"},
-            {"name": "welcome", "emoji": "👋", "type": "text"},
-            {"name": "goodbye", "emoji": "🕊️", "type": "text"}
-          ]
-        },
-        {
-          "name": "IMPORTANT",
-          "channels": [
-            {"name": "rules", "emoji": "📚", "type": "text"},
-            {"name": "announcements", "emoji": "📣", "type": "text"},
-            {"name": "[ADAPT]-leaks", "emoji": "📊", "type": "text"},
-            {"name": "server-boosts", "emoji": "🚀", "type": "text"},
-            {"name": "boosters-rewards", "emoji": "🧨", "type": "text"},
-            {"name": "polls", "emoji": "🥇", "type": "text"},
-            {"name": "scammers", "emoji": "⚠️", "type": "text"},
-            {"name": "applications", "emoji": "📝", "type": "text"},
-            {"name": "server-updates", "emoji": "🔄", "type": "text"},
-            {"name": "hall-of-fame", "emoji": "🥇", "type": "text"},
-            {"name": "content", "emoji": "🎥", "type": "text"},
-            {"name": "support-ticket", "emoji": "🎟️", "type": "text"}
-          ]
-        },
-        {
-          "name": "[ADAPT] CATEGORY 1",
-          "channels": [
-            {"name": "[ADAPT]", "emoji": "🤝", "type": "text"},
-            {"name": "[ADAPT]", "emoji": "🎫", "type": "text"},
-            {"name": "[ADAPT]", "emoji": "✅", "type": "text"}
-          ]
-        },
-        {
-          "name": "GIVEAWAYS",
-          "channels": [
-            {"name": "giveaways", "emoji": "🎉", "type": "text"},
-            {"name": "flash-giveaways", "emoji": "🎁", "type": "text"},
-            {"name": "giveaways-vouches", "emoji": "🎁", "type": "text"},
-            {"name": "GIVEAWAYS VC", "emoji": "🏆", "type": "voice"}
-          ]
-        },
-        {
-          "name": "GENERAL",
-          "channels": [
-            {"name": "general", "emoji": "💬", "type": "text"},
-            {"name": "media", "emoji": "🖼️", "type": "text"},
-            {"name": "commands", "emoji": "⚙️", "type": "text"},
-            {"name": "levels", "emoji": "📈", "type": "text"},
-            {"name": "suggestions", "emoji": "🛠️", "type": "text"}
-          ]
-        },
-        {
-          "name": "[ADAPT] CATEGORY 2",
-          "channels": [
-            {"name": "[ADAPT]", "emoji": "⚔️", "type": "text"},
-            {"name": "[ADAPT]", "emoji": "👑", "type": "text"},
-            {"name": "[ADAPT]", "emoji": "💰", "type": "text"},
-            {"name": "[ADAPT]", "emoji": "⭐", "type": "text"},
-            {"name": "[ADAPT]", "emoji": "💎", "type": "text"},
-            {"name": "duel-requests", "emoji": "⚔️", "type": "text"},
-            {"name": "win-or-loss", "emoji": "⚖️", "type": "text"},
-            {"name": "owners-vouches", "emoji": "👑", "type": "text"},
-            {"name": "staff-vouches", "emoji": "📊", "type": "text"},
-            {"name": "vouches", "emoji": "✅", "type": "text"}
-          ]
-        },
-        {
-          "name": "CONTENT CREATORS",
-          "channels": [
-            {"name": "content-rules", "emoji": "📚", "type": "text"},
-            {"name": "content-announcements", "emoji": "📣", "type": "text"},
-            {"name": "creators-chat", "emoji": "🎥", "type": "text"},
-            {"name": "content-ideas", "emoji": "✨", "type": "text"},
-            {"name": "Creators Vc", "emoji": "🎙️", "type": "voice"}
-          ]
-        },
-        {
-          "name": "PARTNERSHIP & SELF PROMO",
-          "channels": [
-            {"name": "partnerships", "emoji": "🤝", "type": "text"},
-            {"name": "self-promo", "emoji": "⭐", "type": "text"},
-            {"name": "paid-promo", "emoji": "✨", "type": "text"},
-            {"name": "SELF PROMOTERS", "emoji": "🎙️", "type": "voice"}
-          ]
-        },
-        {
-          "name": "VOICE CHATS",
-          "channels": [
-            {"name": "OWNERS VC", "emoji": "👑", "type": "voice"},
-            {"name": "VC 1", "emoji": "🎙️", "type": "voice"},
-            {"name": "VC 2", "emoji": "🎙️", "type": "voice"},
-            {"name": "STAGE", "emoji": "🎪", "type": "voice"},
-            {"name": "SAB VC", "emoji": "💰", "type": "voice"},
-            {"name": "DUEL VC", "emoji": "⚔️", "type": "voice"},
-            {"name": "MUSIC", "emoji": "🎵", "type": "voice"}
-          ]
-        }
-      ]
-    }
+    The user's request: {prompt}
+    
+    Output ONLY a JSON object with a list of "actions" to perform.
+    Formats allowed:
+    1. Rename: {{"action": "rename", "channel_id": 123, "new_name": "new-name"}}
+    2. Move: {{"action": "move", "channel_id": 123, "new_category": "Category Name"}}
+    
+    Example output:
+    {{"actions": [{{"action": "rename", "channel_id": 123, "new_name": "📚┃rules"}}]}}
     """
 
     try:
         response = await ai_client.chat.completions.create(
             model="openai/gpt-oss-20b",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
+            messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"}
         )
         
-        layout = json.loads(response.choices[0].message.content)
+        ai_data = json.loads(response.choices[0].message.content)
+        actions = ai_data.get("actions", [])
         
-        # --- YOUR EXACT 4 FORMATS (NO SPACES, FULL-WIDTH CHARS) ---
-        formats = [
-            "〔{emoji}〕・{ch_name}",
-            "{emoji}┃{ch_name}",
-            "〘{emoji}〙・{ch_name}",
-            "{emoji}・{ch_name}"
-        ]
-        chosen_format = random.choice(formats)
-        # --------------------------------------------------------
+        if not actions:
+            await interaction.edit_original_response(content="😴 AI decided no changes were needed.")
+            return
 
-        building_embed = discord.Embed(
-            title="🔧 Building Your Server",
-            description=f"Using format: `{chosen_format.format(emoji='💬', ch_name='channel')}`",
+        # Save state for UNDO
+        last_actions[guild.id] = {ch.id: ch.name for ch in guild.channels}
+
+        steps_done = []
+        
+        for act in actions:
+            ch = guild.get_channel(act["channel_id"])
+            if not ch: continue
+
+            if act["action"] == "rename":
+                await ch.edit(name=act["new_name"])
+                steps_done.append(f"Renamed {ch.name} to {act['new_name']}")
+                await asyncio.sleep(2)
+
+            elif act["action"] == "move":
+                category = discord.utils.get(guild.categories, name=act["new_category"])
+                if not category:
+                    category = await guild.create_category(act["new_category"])
+                await ch.edit(category=category)
+                steps_done.append(f"Moved {ch.name} to {act['new_category']}")
+                await asyncio.sleep(2)
+
+        # Create the final success embed
+        embed = discord.Embed(
+            title="✅ AI Finished Task",
+            description=f"**{len(steps_done)} steps done**",
             color=discord.Color.green()
         )
-        building_embed.add_field(name="Status", value="0 channels created", inline=False)
-        await interaction.edit_original_response(embed=building_embed)
-
-        count = 0
+        embed.add_field(name="Changes made:", value="\n".join([f"✓ {s}" for s in steps_done[:10]]), inline=False)
         
-        for cat in layout.get("categories", []):
-            # Category format (Using NBSP so Discord doesn't hyphenate it)
-            NBSP = "\u00A0"
-            cat_name = f"----{NBSP}《{cat.get('name', 'CATEGORY')}》{NBSP}----"
-            
-            try:
-                category = await interaction.guild.create_category(cat_name)
-            except discord.HTTPException:
-                await asyncio.sleep(5)
-                category = await interaction.guild.create_category(cat_name)
-                
-            await asyncio.sleep(3)
-            
-            for ch in cat.get("channels", []):
-                ch_name = ch.get('name', 'channel').lower().replace(" ", "-")
-                emoji = ch.get('emoji', '💬')
-                
-                # Force specific emojis
-                if ch_name == "general":
-                    emoji = "💬"
-                elif "announcement" in ch_name and "staff" not in ch_name and "content" not in ch_name:
-                    emoji = "📣"
-
-                # Apply the chosen format
-                full_name = chosen_format.format(emoji=emoji, ch_name=ch_name)
-                
-                try:
-                    if ch.get('type') == 'voice':
-                        await interaction.guild.create_voice_channel(full_name, category=category)
-                    else:
-                        await interaction.guild.create_text_channel(full_name, category=category)
-                except discord.HTTPException:
-                    await asyncio.sleep(10)
-                    if ch.get('type') == 'voice':
-                        await interaction.guild.create_voice_channel(full_name, category=category)
-                    else:
-                        await interaction.guild.create_text_channel(full_name, category=category)
-                
-                count += 1
-                
-                if count % 5 == 0:
-                    building_embed.set_field_at(0, name="Status", value=f"✅ {count} channels created...", inline=False)
-                    await interaction.edit_original_response(embed=building_embed)
-                
-                await asyncio.sleep(3.5) 
-
-        success_embed = discord.Embed(
-            title="✨ Noxhelper successfully created your server!",
-            description=f"Your layout has been generated with **{count}** channels.",
-            color=discord.Color.green()
-        )
-        success_embed.add_field(name="Design Used", value=f"`{chosen_format.format(emoji='💬', ch_name='channel')}`", inline=False)
-        success_embed.add_field(name="Next Step", value="Press `Cmd + R` (Mac) or `Ctrl + R` (Windows) to refresh your Discord sidebar.", inline=False)
-        
-        await interaction.edit_original_response(embed=success_embed)
+        # Add the Undo Button
+        view = UndoView(guild.id)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
 
     except Exception as e:
-        await interaction.edit_original_response(content=f"❌ **Noxhelper Error:** {str(e)}")
+        await interaction.edit_original_response(content=f"❌ Error: {str(e)}")
 
 if __name__ == "__main__":
     bot.run(os.getenv("DISCORD_TOKEN"))
