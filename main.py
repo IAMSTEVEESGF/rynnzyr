@@ -4,6 +4,7 @@ from discord.ext import commands
 import os
 import asyncio
 import json
+import re
 from openai import AsyncOpenAI
 
 intents = discord.Intents.default()
@@ -76,19 +77,19 @@ async def tidy(interaction: discord.Interaction, prompt: str):
     """
 
     try:
-        # USING THE MOST STABLE GROQ MODEL
+        # Using a currently supported Groq model
         response = await ai_client.chat.completions.create(
-            model="llama3-70b-8192", 
+            model="openai/gpt-oss-20b", 
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"}
         )
         
         raw_content = response.choices[0].message.content
         
-        if "```json" in raw_content:
-            raw_content = raw_content.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw_content:
-            raw_content = raw_content.split("```")[1].split("```")[0].strip()
+        # Robust JSON Cleaner
+        json_match = re.search(r'\{.*\}', raw_content, re.DOTALL)
+        if json_match:
+            raw_content = json_match.group(0)
 
         ai_data = json.loads(raw_content)
         actions = ai_data.get("actions", [])
