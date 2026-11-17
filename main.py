@@ -3,11 +3,16 @@ from discord.ext import commands
 import os
 import asyncio
 import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+import httpx
+from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 import threading
+
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI")
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -19,7 +24,7 @@ ai_client = AsyncOpenAI(
 
 app = FastAPI()
 last_actions = {}
-bot_loop = None 
+bot_loop = None
 
 class ChatRequest(BaseModel):
     guild_id: int
@@ -27,33 +32,71 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 async def serve_website():
-    return HTMLResponse(content=open("index.html", "r").read() if os.path.exists("index.html") else "<h1>Website loading...</h1>")
+    return HTMLResponse(content=open("index.html", "r").read())
 
-@app.get("/api/guilds")
-async def get_guilds():
-    # Wait up to 5 seconds for the bot to be ready if it's still booting
-    for _ in range(5):
-        if bot.is_ready() and len(bot.guilds) > 0:
-            break
-        await asyncio.sleep(1)
+@app.get("/login")
+async def login():
+    if not CLIENT_ID or not REDIRECT_URI:
+        return HTMLResponse("<h1>Error: CLIENT_ID or REDIRECT_URI missing in Railway Variables.</h1>")
+    return RedirectResponse(f"https://discord.com/api/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=identify%20guilds")
+
+@app.get("/callback")
+async def callback(code: str):
+    data = {
+        'client_id': CLIENT_ID,
+        'client_secret': CLIENT_SECRET,
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': REDIRECT_URI
+    }
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    
+    async with httpx.AsyncClient() as client:
+        r = await client.post('https://discord.com/api/oauth2/token', data=data, headers=headers)
+        token_data = r.json()
         
-    if not bot.is_ready():
-        return {"guilds": [], "error": "Bot is still booting up..."}
-    return {"guilds": [{"id": g.id, "name": g.name} for g in bot.guilds]}
+    if 'access_token' not in token_data:
+        return RedirectResponse("/?error=auth_failed")
+        
+    redirect = RedirectResponse("/?logged_in=true")
+    redirect.set_cookie(key="discord_token", value=token_data['access_token'], httponly=True)
+    return redirect
+
+@app.get("/api/user-guilds")
+async def get_user_guilds(request: Request):
+    token = request.cookies.get("discord_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Not logged in")
+        
+    async with httpx.AsyncClient() as client:
+        r = await client.get('https://discord.com/api/users/@me/guilds', headers={'Authorization': f'Bearer {token}'})
+        user_guilds = r.json()
+        
+    bot_guild_ids = [g.id for g in bot.guilds]
+    
+    for g in user_guilds:
+        perms = int(g.get('permissions', 0))
+        # Check if user has Admin (0x8) or Manage Server (0x20)
+        if (perms & 0x8) == 0x8 or (perms & 0x20) == 0x20: 
+            g['has_bot'] = int(g['id']) in bot_guild_ids
+            g['invite_url'] = f"https://discord.com/api/oauth2/authorize?client_id={CLIENT_ID}&permissions=8&scope=bot%20applications.commands&guild_id={g['id']}"
+        else:
+            g['has_bot'] = False
+            g['no_perms'] = True
+
+    return {"guilds": [g for g in user_guilds if not g.get('no_perms')]}
 
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     if not bot.is_ready() or not bot_loop:
-        return {"error": "Bot is still starting up. Wait 10 seconds."}
-        
+        return {"error": "Bot is offline. Check Railway logs."}
     future = asyncio.run_coroutine_threadsafe(handle_chat(req.guild_id, req.prompt), bot_loop)
     return future.result()
 
 @app.post("/api/undo")
 async def undo_endpoint(req: ChatRequest):
     if not bot.is_ready() or not bot_loop:
-        return {"error": "Bot is still starting up."}
-        
+        return {"error": "Bot is offline."}
     future = asyncio.run_coroutine_threadsafe(handle_undo(req.guild_id), bot_loop)
     return future.result()
 
@@ -63,7 +106,6 @@ async def handle_chat(guild_id, prompt):
         return {"error": "Bot is not in this server!"}
         
     state_lines = []
-    # ONLY SEND 25 CHANNELS MAX TO PREVENT TOKEN LIMIT
     count = 0
     for ch in guild.channels:
         if isinstance(ch, discord.CategoryChannel): continue
@@ -73,14 +115,10 @@ async def handle_chat(guild_id, prompt):
         if count >= 25: break
         
     server_state_str = "\n".join(state_lines)
-    
     system_prompt = f"""
-    You are an AI Discord manager. 
-    Current server layout (ID:name|Category):
+    You are an AI Discord manager. Current server layout (ID:name|Category):
     {server_state_str}
-    
     Request: "{prompt}"
-    
     Output ONLY commands, one per line. NO other text.
     RENAME|channel_id|new_name
     MOVE|channel_id|new_category
@@ -88,16 +126,13 @@ async def handle_chat(guild_id, prompt):
     CREATE_TEXT|channel_name|Category Name
     CREATE_VOICE|channel_name|Category Name
     """
-
     try:
         response = await ai_client.chat.completions.create(
             model="openai/gpt-oss-20b", 
             messages=[{"role": "system", "content": system_prompt}],
-            max_tokens=1000 # Capped to prevent 413 error
+            max_tokens=1000 
         )
-        
         raw = response.choices[0].message.content.replace("```", "").upper()
-        
         steps = []
         last_actions[guild.id] = {ch.id: ch.name for ch in guild.channels if not isinstance(ch, discord.CategoryChannel)}
 
@@ -106,43 +141,38 @@ async def handle_chat(guild_id, prompt):
             if "RENAME|" in line:
                 try:
                     p = line.split("RENAME|")[1].split("|")
-                    ch_id, new_name = int(p[0].strip()), p[1].strip()
-                    ch = guild.get_channel(ch_id)
+                    ch = guild.get_channel(int(p[0].strip()))
                     if ch:
-                        await ch.edit(name=new_name)
-                        steps.append(f"Renamed to {new_name}")
+                        await ch.edit(name=p[1].strip())
+                        steps.append(f"Renamed to {p[1].strip()}")
                         await asyncio.sleep(2)
                 except: pass
             elif "MOVE|" in line:
                 try:
                     p = line.split("MOVE|")[1].split("|")
-                    ch_id, cat_name = int(p[0].strip()), p[1].strip()
-                    ch = guild.get_channel(ch_id)
+                    ch = guild.get_channel(int(p[0].strip()))
                     if ch:
-                        cat = discord.utils.get(guild.categories, name=cat_name) or await guild.create_category(cat_name)
+                        cat = discord.utils.get(guild.categories, name=p[1].strip()) or await guild.create_category(p[1].strip())
                         await ch.edit(category=cat)
-                        steps.append(f"Moved to {cat_name}")
+                        steps.append(f"Moved to {p[1].strip()}")
                         await asyncio.sleep(2)
                 except: pass
             elif "CREATE_TEXT|" in line:
                 try:
                     p = line.split("CREATE_TEXT|")[1].split("|")
-                    ch_name, cat_name = p[0].strip(), p[1].strip()
-                    cat = discord.utils.get(guild.categories, name=cat_name) or await guild.create_category(cat_name)
-                    await guild.create_text_channel(name=ch_name, category=cat)
-                    steps.append(f"Created text channel {ch_name}")
+                    cat = discord.utils.get(guild.categories, name=p[1].strip()) or await guild.create_category(p[1].strip())
+                    await guild.create_text_channel(name=p[0].strip(), category=cat)
+                    steps.append(f"Created {p[0].strip()}")
                     await asyncio.sleep(2)
                 except: pass
             elif "CREATE_VOICE|" in line:
                 try:
                     p = line.split("CREATE_VOICE|")[1].split("|")
-                    ch_name, cat_name = p[0].strip(), p[1].strip()
-                    cat = discord.utils.get(guild.categories, name=cat_name) or await guild.create_category(cat_name)
-                    await guild.create_voice_channel(name=ch_name, category=cat)
-                    steps.append(f"Created voice channel {ch_name}")
+                    cat = discord.utils.get(guild.categories, name=p[1].strip()) or await guild.create_category(p[1].strip())
+                    await guild.create_voice_channel(name=p[0].strip(), category=cat)
+                    steps.append(f"Created {p[0].strip()}")
                     await asyncio.sleep(2)
                 except: pass
-
         return {"steps": steps, "raw": raw}
     except Exception as e:
         return {"error": str(e)}
@@ -151,7 +181,6 @@ async def handle_undo(guild_id):
     guild = bot.get_guild(guild_id)
     if not guild or guild.id not in last_actions:
         return {"error": "Nothing to undo."}
-        
     for ch_id, old_name in last_actions[guild.id].items():
         ch = guild.get_channel(ch_id)
         if ch:
@@ -159,7 +188,6 @@ async def handle_undo(guild_id):
                 await ch.edit(name=old_name)
                 await asyncio.sleep(1)
             except: pass
-            
     del last_actions[guild.id]
     return {"success": "Undid the last action!"}
 
@@ -174,4 +202,13 @@ def run_web():
 
 if __name__ == "__main__":
     threading.Thread(target=run_web, daemon=True).start()
-    bot.run(os.getenv("DISCORD_TOKEN"))
+    
+    print("⏳ Starting Discord Bot...")
+    try:
+        token = os.getenv("DISCORD_TOKEN")
+        if not token:
+            print("❌ ERROR: DISCORD_TOKEN is missing in Railway Variables!")
+        else:
+            bot.run(token)
+    except Exception as e:
+        print(f"❌ BOT CRASHED: {e}")
