@@ -10,6 +10,7 @@ from openai import AsyncOpenAI
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Make sure GROQ_API_KEY is in your Railway Variables
 ai_client = AsyncOpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=os.getenv("GROQ_API_KEY") 
@@ -57,8 +58,7 @@ async def tidy(interaction: discord.Interaction, prompt: str):
 
     guild = interaction.guild
     
-    # --- COMPRESSED SERVER STATE (Saves tokens) ---
-    # Format: 123456:rules|IMPORTANT
+    # --- THE FIX: LIMIT CHANNELS TO PREVENT 413 TOKEN ERROR ---
     state_lines = []
     for ch in guild.channels:
         if isinstance(ch, discord.CategoryChannel): 
@@ -66,7 +66,9 @@ async def tidy(interaction: discord.Interaction, prompt: str):
         cat_name = ch.category.name if ch.category else "None"
         state_lines.append(f"{ch.id}:{ch.name}|{cat_name}")
         
-    server_state_str = "\n".join(state_lines)
+    # ONLY send the first 40 channels to the AI. 
+    # This guarantees the prompt stays under 3000 tokens.
+    server_state_str = "\n".join(state_lines[:40])
     
     system_prompt = f"""
     You are an AI Discord server manager. The user wants to tidy up their server. 
@@ -82,15 +84,17 @@ async def tidy(interaction: discord.Interaction, prompt: str):
     """
 
     try:
+        # The model that gave you a 413 error (meaning it exists and is active)
         response = await ai_client.chat.completions.create(
-            model="llama-3.1-8b-instant", # Faster model, higher token limits
+            model="openai/gpt-oss-20b", 
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"},
-            max_tokens=2000 # Stop the AI from reserving too many tokens
+            max_tokens=1500 # Stop the AI from reserving too many tokens
         )
         
         raw_content = response.choices[0].message.content
         
+        # JSON Cleaner
         json_match = re.search(r'\{.*\}', raw_content, re.DOTALL)
         if json_match:
             raw_content = json_match.group(0)
