@@ -9,7 +9,6 @@ from pydantic import BaseModel
 from openai import AsyncOpenAI
 import threading
 
-# --- 1. SETUP BOT & AI ---
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -18,9 +17,9 @@ ai_client = AsyncOpenAI(
     api_key=os.getenv("GROQ_API_KEY") 
 )
 
-# --- 2. SETUP WEBSITE ---
 app = FastAPI()
 last_actions = {}
+bot_loop = None # We need to store the bot's event loop
 
 class ChatRequest(BaseModel):
     guild_id: int
@@ -30,46 +29,35 @@ class ChatRequest(BaseModel):
 async def serve_website():
     return HTMLResponse(content=open("index.html", "r").read() if os.path.exists("index.html") else "<h1>Website loading...</h1>")
 
+# NEW ENDPOINT: Gets a list of all servers the bot is in
+@app.get("/api/guilds")
+async def get_guilds():
+    if not bot.is_ready():
+        return {"guilds": []}
+    return {"guilds": [{"id": g.id, "name": g.name} for g in bot.guilds]}
+
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
-    guild = bot.get_guild(req.guild_id)
-    
-    # FORCE FETCH: If the bot doesn't have it in cache, ask Discord directly
-    if not guild:
-        try:
-            guild = await bot.fetch_guild(req.guild_id)
-            await guild.fetch_channels() # Forces the bot to download the channel list
-        except Exception:
-            return {"error": "Bot is not in this server! Invite it, or wait 1 minute for it to sync."}
-            
-    result = await process_ai_request(guild, req.prompt)
-    return result
+    if not bot.is_ready() or not bot_loop:
+        return {"error": "Bot is still starting up on Railway. Wait 10 seconds and refresh."}
+        
+    # We must run the async Discord code inside the BOT'S loop, not the web server's loop
+    future = asyncio.run_coroutine_threadsafe(handle_chat(req.guild_id, req.prompt), bot_loop)
+    return future.result()
 
 @app.post("/api/undo")
 async def undo_endpoint(req: ChatRequest):
-    guild = bot.get_guild(req.guild_id)
-    if not guild:
-        try:
-            guild = await bot.fetch_guild(req.guild_id)
-        except Exception:
-            return {"error": "Bot is not in this server!"}
-            
-    if guild.id not in last_actions:
-        return {"error": "Nothing to undo."}
+    if not bot.is_ready() or not bot_loop:
+        return {"error": "Bot is still starting up."}
         
-    for ch_id, old_name in last_actions[guild.id].items():
-        ch = guild.get_channel(ch_id)
-        if ch:
-            try:
-                await ch.edit(name=old_name)
-                await asyncio.sleep(1)
-            except: pass
-            
-    del last_actions[guild.id]
-    return {"success": "Undid the last action!"}
+    future = asyncio.run_coroutine_threadsafe(handle_undo(req.guild_id), bot_loop)
+    return future.result()
 
-# --- 3. THE AI LOGIC ---
-async def process_ai_request(guild, prompt):
+async def handle_chat(guild_id, prompt):
+    guild = bot.get_guild(guild_id)
+    if not guild:
+        return {"error": "Bot is not in this server!"}
+        
     state_lines = []
     for ch in guild.channels:
         if isinstance(ch, discord.CategoryChannel): continue
@@ -151,9 +139,26 @@ async def process_ai_request(guild, prompt):
     except Exception as e:
         return {"error": str(e)}
 
-# --- 4. START EVERYTHING ---
+async def handle_undo(guild_id):
+    guild = bot.get_guild(guild_id)
+    if not guild or guild.id not in last_actions:
+        return {"error": "Nothing to undo."}
+        
+    for ch_id, old_name in last_actions[guild.id].items():
+        ch = guild.get_channel(ch_id)
+        if ch:
+            try:
+                await ch.edit(name=old_name)
+                await asyncio.sleep(1)
+            except: pass
+            
+    del last_actions[guild.id]
+    return {"success": "Undid the last action!"}
+
 @bot.event
 async def on_ready():
+    global bot_loop
+    bot_loop = asyncio.get_running_loop() # Save the bot's loop
     print(f"✅ Bot online as {bot.user}")
 
 def run_web():
