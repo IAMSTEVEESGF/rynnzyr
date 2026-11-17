@@ -3,14 +3,11 @@ from discord import app_commands
 from discord.ext import commands
 import os
 import asyncio
-import json
-import re
 from openai import AsyncOpenAI
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Make sure GROQ_API_KEY is in your Railway Variables
 ai_client = AsyncOpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=os.getenv("GROQ_API_KEY") 
@@ -65,9 +62,9 @@ async def tidy(interaction: discord.Interaction, prompt: str):
         cat_name = ch.category.name if ch.category else "None"
         state_lines.append(f"{ch.id}:{ch.name}|{cat_name}")
         
-    # Limit to 40 channels to guarantee we don't hit the token limit
     server_state_str = "\n".join(state_lines[:40])
     
+    # --- NO JSON. PIPE SEPARATED LIST ONLY. ---
     system_prompt = f"""
     You are an AI Discord server manager. 
     Current server layout (Format: ID:channel-name|Category):
@@ -75,56 +72,65 @@ async def tidy(interaction: discord.Interaction, prompt: str):
     
     User request: "{prompt}"
     
-    Output ONLY a valid JSON object. NO markdown, NO extra text.
-    Format: {{"actions": [{{"action": "rename", "channel_id": 12345, "new_name": "new-name"}}]}}
+    Output ONLY plain text commands. Do NOT output JSON. Do NOT use markdown.
+    Use this exact format for renaming:
+    RENAME|channel_id|new_name
+    
+    Use this exact format for moving:
+    MOVE|channel_id|new_category_name
+    
+    Only output the commands, one per line. No other text.
     """
 
     try:
-        # REMOVED strict json_object mode to prevent validation crashes
-        # INCREASED max_tokens so it doesn't cut off halfway through
         response = await ai_client.chat.completions.create(
             model="openai/gpt-oss-20b", 
             messages=[{"role": "system", "content": system_prompt}],
-            max_tokens=4000 
+            max_tokens=2000 
         )
         
-        raw_content = response.choices[0].message.content
+        raw_content = response.choices[0].message.content.strip()
         
-        # Extract JSON using regex, ignoring any AI yapping
-        json_match = re.search(r'\{.*\}', raw_content, re.DOTALL)
-        if not json_match:
-            await interaction.edit_original_response(content="❌ **AI Error:** AI didn't output valid JSON. Try a simpler prompt.")
-            return
-            
-        ai_data = json.loads(json_match.group(0))
-        actions = ai_data.get("actions", [])
-        
-        if not actions:
-            await interaction.edit_original_response(content="😴 AI decided no changes were needed.")
-            return
-
+        # Parse the pipe-separated text
+        steps_done = []
         last_actions[guild.id] = {ch.id: ch.name for ch in guild.channels if not isinstance(ch, discord.CategoryChannel)}
 
-        steps_done = []
-        for act in actions:
-            ch_id = act.get("channel_id")
-            ch = guild.get_channel(ch_id)
-            if not ch: continue
+        for line in raw_content.split('\n'):
+            line = line.strip()
+            if not line: continue
+            
+            parts = [p.strip() for p in line.split('|')]
+            
+            if len(parts) == 3 and parts[0] == "RENAME":
+                try:
+                    ch_id = int(parts[1])
+                    new_name = parts[2]
+                    ch = guild.get_channel(ch_id)
+                    if ch and ch.name != new_name:
+                        await ch.edit(name=new_name)
+                        steps_done.append(f"Renamed {ch.name} to {new_name}")
+                        await asyncio.sleep(2)
+                except Exception:
+                    pass
+                    
+            elif len(parts) == 3 and parts[0] == "MOVE":
+                try:
+                    ch_id = int(parts[1])
+                    cat_name = parts[2]
+                    ch = guild.get_channel(ch_id)
+                    if ch:
+                        category = discord.utils.get(guild.categories, name=cat_name)
+                        if not category:
+                            category = await guild.create_category(cat_name)
+                        await ch.edit(category=category)
+                        steps_done.append(f"Moved {ch.name} to {cat_name}")
+                        await asyncio.sleep(2)
+                except Exception:
+                    pass
 
-            if act.get("action") == "rename":
-                new_name = act.get("new_name", "renamed")
-                await ch.edit(name=new_name)
-                steps_done.append(f"Renamed {ch.name} to {new_name}")
-                await asyncio.sleep(2)
-
-            elif act.get("action") == "move":
-                cat_name = act.get("new_category", "ARCHIVE")
-                category = discord.utils.get(guild.categories, name=cat_name)
-                if not category:
-                    category = await guild.create_category(cat_name)
-                await ch.edit(category=category)
-                steps_done.append(f"Moved {ch.name} to {cat_name}")
-                await asyncio.sleep(2)
+        if not steps_done:
+            await interaction.edit_original_response(content="😴 AI decided no changes were needed, or it failed to format the commands correctly.")
+            return
 
         embed = discord.Embed(
             title="✅ AI Finished Task",
