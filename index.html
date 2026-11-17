@@ -4,87 +4,150 @@
     <title>AI Discord Manager</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f0f13; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .container { width: 100%; max-width: 600px; background: #1a1a20; border-radius: 12px; border: 1px solid #2a2a35; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .header { display: flex; align-items: center; margin-bottom: 20px; font-weight: bold; font-size: 18px; }
-        .chat-box { height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f0f13; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden;}
+        .container { width: 100%; max-width: 800px; height: 90vh; background: #1a1a20; border-radius: 12px; border: 1px solid #2a2a35; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-weight: bold; font-size: 18px; }
+        .login-btn { background: #5865F2; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; text-decoration: none;}
+        
+        /* Server Grid */
+        .guild-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; overflow-y: auto; flex: 1; }
+        .guild-card { background: #2a2a35; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+        .guild-icon { width: 64px; height: 64px; border-radius: 50%; background: #0f0f13; margin-bottom: 10px; display: flex; justify-content: center; align-items: center; font-size: 24px; font-weight: bold; background-size: cover; background-position: center; }
+        .guild-name { font-weight: bold; margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
+        .guild-btn { background: #5865F2; color: white; border: none; padding: 8px; border-radius: 5px; cursor: pointer; width: 100%; text-decoration: none; font-size: 14px; box-sizing: border-box; display: block;}
+        .guild-btn.invite { background: #23a559; }
+        
+        /* Chat UI */
+        #chat-ui { display: none; flex-direction: column; height: 100%; }
+        .chat-box { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
         .message { background: #2a2a35; padding: 12px 16px; border-radius: 8px; width: fit-content; max-width: 80%; }
         .user-message { background: #5865F2; align-self: flex-end; }
         .bot-message { align-self: flex-start; }
         .steps { font-size: 14px; color: #a3a3b3; margin-top: 5px; }
         .input-area { display: flex; gap: 10px; }
-        input, select { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #2a2a35; background: #0f0f13; color: white; outline: none; }
+        input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #2a2a35; background: #0f0f13; color: white; outline: none; }
         button { background: #5865F2; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #4752C4; }
-        .undo-btn { background: #2a2a35; margin-top: 10px; display: none; width: 100%; }
+        .back-btn { background: #4f545c; margin-right: 10px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <div class="header">✨ AI Server Manager</div>
-    <div style="margin-bottom: 10px;">
-        <select id="guild_select">
-            <option value="">Loading your servers...</option>
-        </select>
+    <div class="header">
+        <div style="display:flex; align-items:center;">
+            <button class="back-btn" id="back-btn" style="display:none;" onclick="showDashboard()">← Back</button>
+            <span>✨ AI Server Manager</span>
+        </div>
+        <a href="/login" class="login-btn" id="login-btn">Login with Discord</a>
     </div>
-    <div class="chat-box" id="chat-box">
-        <div class="message bot-message">Select your server from the dropdown, then tell me what to do!</div>
+
+    <!-- DASHBOARD VIEW -->
+    <div id="dashboard" class="guild-grid">
+        <div style="grid-column: 1/-1; text-align: center; color: #a3a3b3; margin-top: 50px;">
+            Please login to view your servers.
+        </div>
     </div>
-    
-    <div class="input-area">
-        <input type="text" id="prompt" placeholder="Make me a steal a brainrot roblox server pls" onkeypress="handleKeyPress(event)">
-        <button onclick="sendPrompt()">Send</button>
+
+    <!-- CHAT VIEW -->
+    <div id="chat-ui">
+        <div class="chat-box" id="chat-box">
+            <div class="message bot-message">Hello! Tell me how to build or tidy your server.</div>
+        </div>
+        <div class="input-area">
+            <input type="text" id="prompt" placeholder="Make me a steal a brainrot roblox server pls" onkeypress="handleKeyPress(event)">
+            <button onclick="sendPrompt()">Send</button>
+        </div>
+        <button class="undo-btn" id="undo-btn" style="display:none; margin-top:10px; background: #2a2a35;" onclick="undoAction()">Undo Last Action</button>
     </div>
-    <button class="undo-btn" id="undo-btn" onclick="undoAction()">Undo Last Action</button>
 </div>
 
 <script>
-    // Retry loop to wait for the bot to boot up
-    async function loadServers() {
+    let activeGuildId = null;
+
+    window.onload = async () => {
+        // Try to load guilds (cookie will auto-auth if they just logged in)
+        loadGuilds();
+    };
+
+    async function loadGuilds() {
         try {
-            const res = await fetch('/api/guilds');
-            const data = await res.json();
-            const select = document.getElementById('guild_select');
-            
-            if (data.guilds && data.guilds.length > 0) {
-                select.innerHTML = '';
-                data.guilds.forEach(g => {
-                    const opt = document.createElement('option');
-                    opt.value = g.id;
-                    opt.innerText = g.name;
-                    select.appendChild(opt);
-                });
-            } else {
-                // If no servers, wait 2 seconds and try again
-                select.innerHTML = '<option value="">Waiting for bot to sync...</option>';
-                setTimeout(loadServers, 2000);
+            const res = await fetch('/api/user-guilds');
+            if (res.status === 401) {
+                // Not logged in, do nothing (shows login button)
+                return; 
             }
-        } catch(e) {
-            setTimeout(loadServers, 2000);
-        }
+            
+            const data = await res.json();
+            document.getElementById('login-btn').style.display = 'none';
+            const grid = document.getElementById('dashboard');
+            grid.innerHTML = '';
+
+            if (!data.guilds || data.guilds.length === 0) {
+                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;">No servers found where you have Admin.</div>';
+                return;
+            }
+
+            data.guilds.forEach(g => {
+                const iconUrl = g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png` : '';
+                const card = document.createElement('div');
+                card.className = 'guild-card';
+                
+                if (g.has_bot) {
+                    card.innerHTML = `
+                        <div class="guild-icon" style="background-image:url('${iconUrl}');">${!iconUrl ? g.name[0] : ''}</div>
+                        <div class="guild-name">${g.name}</div>
+                        <button class="guild-btn" onclick="openChat('${g.id}', '${g.name}')">Manage</button>
+                    `;
+                } else {
+                    card.innerHTML = `
+                        <div class="guild-icon" style="background-image:url('${iconUrl}');">${!iconUrl ? g.name[0] : ''}</div>
+                        <div class="guild-name">${g.name}</div>
+                        <a href="${g.invite_url}" target="_blank" class="guild-btn invite">Invite Bot</a>
+                    `;
+                }
+                grid.appendChild(card);
+            });
+        } catch(e) { console.error(e); }
     }
 
-    window.onload = loadServers;
+    function openChat(id, name) {
+        activeGuildId = id;
+        document.getElementById('dashboard').style.display = 'none';
+        document.getElementById('chat-ui').style.display = 'flex';
+        document.getElementById('back-btn').style.display = 'block';
+        document.getElementById('login-btn').style.display = 'none';
+        document.getElementById('chat-box').innerHTML = `<div class="message bot-message">Connected to <b>${name}</b>. What should I do?</div>`;
+    }
+
+    function showDashboard() {
+        document.getElementById('chat-ui').style.display = 'none';
+        document.getElementById('dashboard').style.display = 'grid';
+        document.getElementById('back-btn').style.display = 'none';
+    }
 
     async function sendPrompt() {
-        const guildId = document.getElementById('guild_select').value;
         const promptInput = document.getElementById('prompt');
         const prompt = promptInput.value;
-        
-        if (!guildId) { alert("Select a server first!"); return; }
-        if (!prompt) return;
+        if (!prompt || !activeGuildId) return;
 
         addMessage(prompt, 'user-message');
         promptInput.value = '';
+        
+        const chatBox = document.getElementById('chat-box');
+        const loadingMsg = document.createElement('div');
+        loadingMsg.className = 'message bot-message';
+        loadingMsg.innerHTML = 'Thinking...';
+        chatBox.appendChild(loadingMsg);
+        chatBox.scrollTop = chatBox.scrollHeight;
 
         try {
             const response = await fetch(`/api/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ guild_id: parseInt(guildId), prompt: prompt })
+                body: JSON.stringify({ guild_id: parseInt(activeGuildId), prompt: prompt })
             });
             const data = await response.json();
+            loadingMsg.remove();
 
             if (data.error) {
                 addMessage(`Error: ${data.error}`, 'bot-message');
@@ -96,16 +159,16 @@
                 addMessage(`AI didn't make any changes. Output:<br><code>${data.raw}</code>`, 'bot-message');
             }
         } catch (e) {
-            addMessage("Failed to connect. The bot might still be starting up on Railway.", 'bot-message');
+            loadingMsg.remove();
+            addMessage("Failed to connect.", 'bot-message');
         }
     }
 
     async function undoAction() {
-        const guildId = document.getElementById('guild_select').value;
         const response = await fetch(`/api/undo`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ guild_id: parseInt(guildId), prompt: "" })
+            body: JSON.stringify({ guild_id: parseInt(activeGuildId), prompt: "" })
         });
         const data = await response.json();
         addMessage(data.success || data.error, 'bot-message');
@@ -121,9 +184,7 @@
         chatBox.scrollTop = chatBox.scrollHeight;
     }
 
-    function handleKeyPress(e) {
-        if (e.key === 'Enter') sendPrompt();
-    }
+    function handleKeyPress(e) { if (e.key === 'Enter') sendPrompt(); }
 </script>
 </body>
 </html>
