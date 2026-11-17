@@ -17,10 +17,9 @@ ai_client = AsyncOpenAI(
 # Store the last action so we can Undo it
 last_actions = {}
 
-# --- THE UNDO BUTTON ---
 class UndoView(discord.ui.View):
     def __init__(self, guild_id):
-        super().__init__(timeout=300) # Button lasts for 5 minutes
+        super().__init__(timeout=300)
         self.guild_id = guild_id
 
     @discord.ui.button(label="Undo", style=discord.ButtonStyle.danger)
@@ -29,12 +28,14 @@ class UndoView(discord.ui.View):
             await interaction.response.defer()
             guild = interaction.guild
             
-            # Restore the old names
             for channel_id, old_name in last_actions[self.guild_id].items():
                 channel = guild.get_channel(channel_id)
                 if channel:
-                    await channel.edit(name=old_name)
-                    await asyncio.sleep(2) # Avoid rate limits
+                    try:
+                        await channel.edit(name=old_name)
+                        await asyncio.sleep(2)
+                    except:
+                        pass
             
             del last_actions[self.guild_id]
             await interaction.edit_original_response(content="✅ Successfully undid the last action.", view=None)
@@ -46,9 +47,8 @@ async def on_ready():
     await bot.tree.sync()
     print("✅ Bot online!")
 
-# --- THE SMART COMMAND ---
 @bot.tree.command(name="tidy", description="Use AI to tidy up your channels")
-@app_commands.describe(prompt="E.g., 'Move all old channels to an ARCHIVE category' or 'Make everything emoji based'")
+@app_commands.describe(prompt="E.g., 'Move all old channels to an ARCHIVE category'")
 async def tidy(interaction: discord.Interaction, prompt: str):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Admin only.", ephemeral=True)
@@ -59,36 +59,50 @@ async def tidy(interaction: discord.Interaction, prompt: str):
 
     guild = interaction.guild
     
-    # Gather current server structure for the AI to read
+    # Create a clean JSON list of current channels for the AI to read
     server_state = []
-    for cat in guild.categories:
-        cat_channels = [ch.name for ch in cat.channels]
-        server_state.append(f"Category: {cat.name} | Channels: {', '.join(cat_channels)}")
+    for ch in guild.channels:
+        if isinstance(ch, discord.CategoryChannel): continue
+        cat_name = ch.category.name if ch.category else "None"
+        server_state.append({
+            "id": ch.id, 
+            "name": ch.name, 
+            "category": cat_name
+        })
         
     system_prompt = f"""
-    You are an AI Discord manager. The user wants to tidy up their server. 
-    Here is the current server state:
-    {chr(10).join(server_state)}
+    You are an AI Discord server manager. The user wants to tidy up their server. 
     
-    The user's request: {prompt}
+    Here is the current server layout in JSON:
+    {json.dumps(server_state)}
     
-    Output ONLY a JSON object with a list of "actions" to perform.
+    The user's request: "{prompt}"
+    
+    Output ONLY a valid JSON object with a list of "actions" to perform.
+    Do NOT wrap it in markdown. Do NOT add any other text.
+    
     Formats allowed:
-    1. Rename: {{"action": "rename", "channel_id": 123, "new_name": "new-name"}}
-    2. Move: {{"action": "move", "channel_id": 123, "new_category": "Category Name"}}
-    
-    Example output:
-    {{"actions": [{{"action": "rename", "channel_id": 123, "new_name": "📚┃rules"}}]}}
+    1. Rename: {{"action": "rename", "channel_id": 12345, "new_name": "new-name"}}
+    2. Move: {{"action": "move", "channel_id": 12345, "new_category": "ARCHIVE"}}
     """
 
     try:
+        # Using a much smarter model for this specific task
         response = await ai_client.chat.completions.create(
-            model="openai/gpt-oss-20b",
+            model="llama-3.3-70b-versatile", 
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"}
         )
         
-        ai_data = json.loads(response.choices[0].message.content)
+        raw_content = response.choices[0].message.content
+        
+        # CLEANER: Strip out accidental markdown blocks
+        if "```json" in raw_content:
+            raw_content = raw_content.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_content:
+            raw_content = raw_content.split("```")[1].split("```")[0].strip()
+
+        ai_data = json.loads(raw_content)
         actions = ai_data.get("actions", [])
         
         if not actions:
@@ -96,25 +110,28 @@ async def tidy(interaction: discord.Interaction, prompt: str):
             return
 
         # Save state for UNDO
-        last_actions[guild.id] = {ch.id: ch.name for ch in guild.channels}
+        last_actions[guild.id] = {ch.id: ch.name for ch in guild.channels if not isinstance(ch, discord.CategoryChannel)}
 
         steps_done = []
         
         for act in actions:
-            ch = guild.get_channel(act["channel_id"])
+            ch_id = act.get("channel_id")
+            ch = guild.get_channel(ch_id)
             if not ch: continue
 
-            if act["action"] == "rename":
-                await ch.edit(name=act["new_name"])
-                steps_done.append(f"Renamed {ch.name} to {act['new_name']}")
+            if act.get("action") == "rename":
+                new_name = act.get("new_name", "renamed")
+                await ch.edit(name=new_name)
+                steps_done.append(f"Renamed {ch.name} to {new_name}")
                 await asyncio.sleep(2)
 
-            elif act["action"] == "move":
-                category = discord.utils.get(guild.categories, name=act["new_category"])
+            elif act.get("action") == "move":
+                cat_name = act.get("new_category", "ARCHIVE")
+                category = discord.utils.get(guild.categories, name=cat_name)
                 if not category:
-                    category = await guild.create_category(act["new_category"])
+                    category = await guild.create_category(cat_name)
                 await ch.edit(category=category)
-                steps_done.append(f"Moved {ch.name} to {act['new_category']}")
+                steps_done.append(f"Moved {ch.name} to {cat_name}")
                 await asyncio.sleep(2)
 
         # Create the final success embed
@@ -123,7 +140,10 @@ async def tidy(interaction: discord.Interaction, prompt: str):
             description=f"**{len(steps_done)} steps done**",
             color=discord.Color.green()
         )
+        # Show up to 10 steps to keep the message clean
         embed.add_field(name="Changes made:", value="\n".join([f"✓ {s}" for s in steps_done[:10]]), inline=False)
+        if len(steps_done) > 10:
+            embed.set_footer(text=f"And {len(steps_done) - 10} more changes...")
         
         # Add the Undo Button
         view = UndoView(guild.id)
