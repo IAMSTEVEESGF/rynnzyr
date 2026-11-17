@@ -10,7 +10,6 @@ from openai import AsyncOpenAI
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Make sure GROQ_API_KEY is in your Railway Variables
 ai_client = AsyncOpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=os.getenv("GROQ_API_KEY") 
@@ -57,16 +56,22 @@ async def tidy(interaction: discord.Interaction, prompt: str):
     await interaction.edit_original_response(content="🧠 **AI is analyzing your server...**")
 
     guild = interaction.guild
-    server_state = []
+    
+    # --- COMPRESSED SERVER STATE (Saves tokens) ---
+    # Format: 123456:rules|IMPORTANT
+    state_lines = []
     for ch in guild.channels:
-        if isinstance(ch, discord.CategoryChannel): continue
+        if isinstance(ch, discord.CategoryChannel): 
+            continue
         cat_name = ch.category.name if ch.category else "None"
-        server_state.append({"id": ch.id, "name": ch.name, "category": cat_name})
+        state_lines.append(f"{ch.id}:{ch.name}|{cat_name}")
         
+    server_state_str = "\n".join(state_lines)
+    
     system_prompt = f"""
     You are an AI Discord server manager. The user wants to tidy up their server. 
-    Here is the current server layout in JSON:
-    {json.dumps(server_state)}
+    Here is the current server layout (Format: ID:channel-name|Category):
+    {server_state_str}
     
     The user's request: "{prompt}"
     
@@ -77,16 +82,15 @@ async def tidy(interaction: discord.Interaction, prompt: str):
     """
 
     try:
-        # Using a currently supported Groq model
         response = await ai_client.chat.completions.create(
-            model="openai/gpt-oss-20b", 
+            model="llama-3.1-8b-instant", # Faster model, higher token limits
             messages=[{"role": "system", "content": system_prompt}],
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            max_tokens=2000 # Stop the AI from reserving too many tokens
         )
         
         raw_content = response.choices[0].message.content
         
-        # Robust JSON Cleaner
         json_match = re.search(r'\{.*\}', raw_content, re.DOTALL)
         if json_match:
             raw_content = json_match.group(0)
