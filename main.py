@@ -58,7 +58,6 @@ async def tidy(interaction: discord.Interaction, prompt: str):
 
     guild = interaction.guild
     
-    # --- THE FIX: LIMIT CHANNELS TO PREVENT 413 TOKEN ERROR ---
     state_lines = []
     for ch in guild.channels:
         if isinstance(ch, discord.CategoryChannel): 
@@ -66,40 +65,38 @@ async def tidy(interaction: discord.Interaction, prompt: str):
         cat_name = ch.category.name if ch.category else "None"
         state_lines.append(f"{ch.id}:{ch.name}|{cat_name}")
         
-    # ONLY send the first 40 channels to the AI. 
-    # This guarantees the prompt stays under 3000 tokens.
+    # Limit to 40 channels to guarantee we don't hit the token limit
     server_state_str = "\n".join(state_lines[:40])
     
     system_prompt = f"""
-    You are an AI Discord server manager. The user wants to tidy up their server. 
-    Here is the current server layout (Format: ID:channel-name|Category):
+    You are an AI Discord server manager. 
+    Current server layout (Format: ID:channel-name|Category):
     {server_state_str}
     
-    The user's request: "{prompt}"
+    User request: "{prompt}"
     
-    Output ONLY a valid JSON object with a list of "actions". Do NOT wrap it in markdown.
-    Formats:
-    1. Rename: {{"action": "rename", "channel_id": 12345, "new_name": "new-name"}}
-    2. Move: {{"action": "move", "channel_id": 12345, "new_category": "ARCHIVE"}}
+    Output ONLY a valid JSON object. NO markdown, NO extra text.
+    Format: {{"actions": [{{"action": "rename", "channel_id": 12345, "new_name": "new-name"}}]}}
     """
 
     try:
-        # The model that gave you a 413 error (meaning it exists and is active)
+        # REMOVED strict json_object mode to prevent validation crashes
+        # INCREASED max_tokens so it doesn't cut off halfway through
         response = await ai_client.chat.completions.create(
             model="openai/gpt-oss-20b", 
             messages=[{"role": "system", "content": system_prompt}],
-            response_format={"type": "json_object"},
-            max_tokens=1500 # Stop the AI from reserving too many tokens
+            max_tokens=4000 
         )
         
         raw_content = response.choices[0].message.content
         
-        # JSON Cleaner
+        # Extract JSON using regex, ignoring any AI yapping
         json_match = re.search(r'\{.*\}', raw_content, re.DOTALL)
-        if json_match:
-            raw_content = json_match.group(0)
-
-        ai_data = json.loads(raw_content)
+        if not json_match:
+            await interaction.edit_original_response(content="❌ **AI Error:** AI didn't output valid JSON. Try a simpler prompt.")
+            return
+            
+        ai_data = json.loads(json_match.group(0))
         actions = ai_data.get("actions", [])
         
         if not actions:
