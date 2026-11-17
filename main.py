@@ -9,7 +9,7 @@ from openai import AsyncOpenAI
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# SECURE: Pulls the key from Railway Variables, not the code
+# Make sure GROQ_API_KEY is in your Railway Variables
 ai_client = AsyncOpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=os.getenv("GROQ_API_KEY") 
@@ -76,9 +76,9 @@ async def tidy(interaction: discord.Interaction, prompt: str):
     """
 
     try:
-        # REAL GROQ MODEL: llama-3.1-70b-versatile
+        # USING THE MOST STABLE GROQ MODEL
         response = await ai_client.chat.completions.create(
-            model="llama-3.1-70b-versatile", 
+            model="llama3-70b-8192", 
             messages=[{"role": "system", "content": system_prompt}],
             response_format={"type": "json_object"}
         )
