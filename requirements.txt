@@ -2,3 +2,5 @@ discord.py
 openai
 fastapi
 uvicorn
+httpx
+python-multipart
