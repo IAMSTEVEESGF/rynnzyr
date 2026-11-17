@@ -40,8 +40,8 @@
 </div>
 
 <script>
-    // Load the servers into the dropdown when the page opens
-    window.onload = async function() {
+    // Retry loop to wait for the bot to boot up
+    async function loadServers() {
         try {
             const res = await fetch('/api/guilds');
             const data = await res.json();
@@ -56,12 +56,16 @@
                     select.appendChild(opt);
                 });
             } else {
-                select.innerHTML = '<option value="">Bot is not in any servers!</option>';
+                // If no servers, wait 2 seconds and try again
+                select.innerHTML = '<option value="">Waiting for bot to sync...</option>';
+                setTimeout(loadServers, 2000);
             }
         } catch(e) {
-            document.getElementById('guild_select').innerHTML = '<option value="">Error loading servers. Refresh.</option>';
+            setTimeout(loadServers, 2000);
         }
-    };
+    }
+
+    window.onload = loadServers;
 
     async function sendPrompt() {
         const guildId = document.getElementById('guild_select').value;
