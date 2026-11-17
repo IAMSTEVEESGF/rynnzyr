@@ -1,10 +1,15 @@
 import discord
-from discord import app_commands
 from discord.ext import commands
 import os
 import asyncio
+import uvicorn
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 from openai import AsyncOpenAI
+import threading
 
+# --- 1. SETUP BOT & AI ---
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -13,139 +18,116 @@ ai_client = AsyncOpenAI(
     api_key=os.getenv("GROQ_API_KEY") 
 )
 
+# --- 2. SETUP WEBSITE ---
+app = FastAPI()
 last_actions = {}
 
-class UndoView(discord.ui.View):
-    def __init__(self, guild_id):
-        super().__init__(timeout=300)
-        self.guild_id = guild_id
+class ChatRequest(BaseModel):
+    guild_id: int
+    prompt: str
 
-    @discord.ui.button(label="Undo", style=discord.ButtonStyle.danger)
-    async def undo_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.guild_id in last_actions:
-            await interaction.response.defer()
-            guild = interaction.guild
-            for channel_id, old_name in last_actions[self.guild_id].items():
-                channel = guild.get_channel(channel_id)
-                if channel:
-                    try:
-                        await channel.edit(name=old_name)
-                        await asyncio.sleep(2)
-                    except:
-                        pass
-            del last_actions[self.guild_id]
-            await interaction.edit_original_response(content="✅ Successfully undid the last action.", view=None)
-        else:
-            await interaction.response.send_message("❌ Nothing to undo!", ephemeral=True)
+@app.get("/")
+async def serve_website():
+    # This serves the front-end to your browser
+    return HTMLResponse(content=open("index.html", "r").read() if os.path.exists("index.html") else "<h1>Website loading...</h1>")
 
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-    print("✅ Bot online!")
+@app.post("/api/chat")
+async def chat_endpoint(req: ChatRequest):
+    guild = bot.get_guild(req.guild_id)
+    if not guild:
+        return {"error": "Bot is not in this server! Invite it first."}
+        
+    await bot.loop.run_in_executor(None, lambda: None) # ensure loop is running
+    result = await process_ai_request(guild, req.prompt)
+    return result
 
-@bot.tree.command(name="tidy", description="Use AI to tidy up your channels")
-@app_commands.describe(prompt="E.g., 'Move all old channels to an ARCHIVE category'")
-async def tidy(interaction: discord.Interaction, prompt: str):
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ Admin only.", ephemeral=True)
-        return
+@app.post("/api/undo")
+async def undo_endpoint(req: ChatRequest):
+    guild = bot.get_guild(req.guild_id)
+    if not guild or guild.id not in last_actions:
+        return {"error": "Nothing to undo."}
+        
+    for ch_id, old_name in last_actions[guild.id].items():
+        ch = guild.get_channel(ch_id)
+        if ch:
+            try:
+                await ch.edit(name=old_name)
+                await asyncio.sleep(1)
+            except: pass
+            
+    del last_actions[guild.id]
+    return {"success": "Undid the last action!"}
 
-    await interaction.response.defer()
-    await interaction.edit_original_response(content="🧠 **AI is analyzing your server...**")
-
-    guild = interaction.guild
-    
+# --- 3. THE AI LOGIC ---
+async def process_ai_request(guild, prompt):
     state_lines = []
     for ch in guild.channels:
-        if isinstance(ch, discord.CategoryChannel): 
-            continue
+        if isinstance(ch, discord.CategoryChannel): continue
         cat_name = ch.category.name if ch.category else "None"
         state_lines.append(f"{ch.id}:{ch.name}|{cat_name}")
         
     server_state_str = "\n".join(state_lines[:40])
     
-    # --- NO JSON. PIPE SEPARATED LIST ONLY. ---
     system_prompt = f"""
-    You are an AI Discord server manager. 
-    Current server layout (Format: ID:channel-name|Category):
+    You are an AI Discord manager. 
+    Current server layout (ID:name|Category):
     {server_state_str}
     
-    User request: "{prompt}"
+    Request: "{prompt}"
     
-    Output ONLY plain text commands. Do NOT output JSON. Do NOT use markdown.
-    Use this exact format for renaming:
+    Output ONLY commands, one per line. NO other text.
     RENAME|channel_id|new_name
-    
-    Use this exact format for moving:
-    MOVE|channel_id|new_category_name
-    
-    Only output the commands, one per line. No other text.
+    MOVE|channel_id|new_category
     """
 
     try:
         response = await ai_client.chat.completions.create(
             model="openai/gpt-oss-20b", 
             messages=[{"role": "system", "content": system_prompt}],
-            max_tokens=2000 
+            max_tokens=1500 
         )
         
-        raw_content = response.choices[0].message.content.strip()
+        raw = response.choices[0].message.content.replace("```", "").upper()
         
-        # Parse the pipe-separated text
-        steps_done = []
+        steps = []
         last_actions[guild.id] = {ch.id: ch.name for ch in guild.channels if not isinstance(ch, discord.CategoryChannel)}
 
-        for line in raw_content.split('\n'):
+        for line in raw.split('\n'):
             line = line.strip()
-            if not line: continue
-            
-            parts = [p.strip() for p in line.split('|')]
-            
-            if len(parts) == 3 and parts[0] == "RENAME":
+            if "RENAME|" in line:
                 try:
-                    ch_id = int(parts[1])
-                    new_name = parts[2]
-                    ch = guild.get_channel(ch_id)
-                    if ch and ch.name != new_name:
-                        await ch.edit(name=new_name)
-                        steps_done.append(f"Renamed {ch.name} to {new_name}")
-                        await asyncio.sleep(2)
-                except Exception:
-                    pass
-                    
-            elif len(parts) == 3 and parts[0] == "MOVE":
-                try:
-                    ch_id = int(parts[1])
-                    cat_name = parts[2]
+                    p = line.split("RENAME|")[1].split("|")
+                    ch_id, new_name = int(p[0].strip()), p[1].strip()
                     ch = guild.get_channel(ch_id)
                     if ch:
-                        category = discord.utils.get(guild.categories, name=cat_name)
-                        if not category:
-                            category = await guild.create_category(cat_name)
-                        await ch.edit(category=category)
-                        steps_done.append(f"Moved {ch.name} to {cat_name}")
+                        await ch.edit(name=new_name)
+                        steps.append(f"Renamed to {new_name}")
                         await asyncio.sleep(2)
-                except Exception:
-                    pass
+                except: pass
+            elif "MOVE|" in line:
+                try:
+                    p = line.split("MOVE|")[1].split("|")
+                    ch_id, cat_name = int(p[0].strip()), p[1].strip()
+                    ch = guild.get_channel(ch_id)
+                    if ch:
+                        cat = discord.utils.get(guild.categories, name=cat_name) or await guild.create_category(cat_name)
+                        await ch.edit(category=cat)
+                        steps.append(f"Moved to {cat_name}")
+                        await asyncio.sleep(2)
+                except: pass
 
-        if not steps_done:
-            await interaction.edit_original_response(content="😴 AI decided no changes were needed, or it failed to format the commands correctly.")
-            return
-
-        embed = discord.Embed(
-            title="✅ AI Finished Task",
-            description=f"**{len(steps_done)} steps done**",
-            color=discord.Color.green()
-        )
-        embed.add_field(name="Changes made:", value="\n".join([f"✓ {s}" for s in steps_done[:10]]), inline=False)
-        if len(steps_done) > 10:
-            embed.set_footer(text=f"And {len(steps_done) - 10} more changes...")
-        
-        view = UndoView(guild.id)
-        await interaction.edit_original_response(content=None, embed=embed, view=view)
-
+        return {"steps": steps, "raw": raw}
     except Exception as e:
-        await interaction.edit_original_response(content=f"❌ Error: {str(e)}")
+        return {"error": str(e)}
+
+# --- 4. START EVERYTHING ---
+@bot.event
+async def on_ready():
+    print(f"✅ Bot online as {bot.user}")
+
+def run_web():
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
 
 if __name__ == "__main__":
+    threading.Thread(target=run_web, daemon=True).start()
     bot.run(os.getenv("DISCORD_TOKEN"))
