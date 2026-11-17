@@ -28,23 +28,33 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 async def serve_website():
-    # This serves the front-end to your browser
     return HTMLResponse(content=open("index.html", "r").read() if os.path.exists("index.html") else "<h1>Website loading...</h1>")
 
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     guild = bot.get_guild(req.guild_id)
+    
+    # FORCE FETCH: If the bot doesn't have it in cache, ask Discord directly
     if not guild:
-        return {"error": "Bot is not in this server! Invite it first."}
-        
-    await bot.loop.run_in_executor(None, lambda: None) # ensure loop is running
+        try:
+            guild = await bot.fetch_guild(req.guild_id)
+            await guild.fetch_channels() # Forces the bot to download the channel list
+        except Exception:
+            return {"error": "Bot is not in this server! Invite it, or wait 1 minute for it to sync."}
+            
     result = await process_ai_request(guild, req.prompt)
     return result
 
 @app.post("/api/undo")
 async def undo_endpoint(req: ChatRequest):
     guild = bot.get_guild(req.guild_id)
-    if not guild or guild.id not in last_actions:
+    if not guild:
+        try:
+            guild = await bot.fetch_guild(req.guild_id)
+        except Exception:
+            return {"error": "Bot is not in this server!"}
+            
+    if guild.id not in last_actions:
         return {"error": "Nothing to undo."}
         
     for ch_id, old_name in last_actions[guild.id].items():
@@ -78,6 +88,9 @@ async def process_ai_request(guild, prompt):
     Output ONLY commands, one per line. NO other text.
     RENAME|channel_id|new_name
     MOVE|channel_id|new_category
+    CREATE_CATEGORY|Category Name
+    CREATE_TEXT|channel_name|Category Name
+    CREATE_VOICE|channel_name|Category Name
     """
 
     try:
@@ -114,6 +127,24 @@ async def process_ai_request(guild, prompt):
                         await ch.edit(category=cat)
                         steps.append(f"Moved to {cat_name}")
                         await asyncio.sleep(2)
+                except: pass
+            elif "CREATE_TEXT|" in line:
+                try:
+                    p = line.split("CREATE_TEXT|")[1].split("|")
+                    ch_name, cat_name = p[0].strip(), p[1].strip()
+                    cat = discord.utils.get(guild.categories, name=cat_name) or await guild.create_category(cat_name)
+                    await guild.create_text_channel(name=ch_name, category=cat)
+                    steps.append(f"Created text channel {ch_name}")
+                    await asyncio.sleep(2)
+                except: pass
+            elif "CREATE_VOICE|" in line:
+                try:
+                    p = line.split("CREATE_VOICE|")[1].split("|")
+                    ch_name, cat_name = p[0].strip(), p[1].strip()
+                    cat = discord.utils.get(guild.categories, name=cat_name) or await guild.create_category(cat_name)
+                    await guild.create_voice_channel(name=ch_name, category=cat)
+                    steps.append(f"Created voice channel {ch_name}")
+                    await asyncio.sleep(2)
                 except: pass
 
         return {"steps": steps, "raw": raw}
