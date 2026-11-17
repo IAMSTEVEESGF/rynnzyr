@@ -40,8 +40,13 @@ async def login():
         return HTMLResponse("<h1>Error: CLIENT_ID or REDIRECT_URI missing in Railway Variables.</h1>")
     return RedirectResponse(f"https://discord.com/api/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=identify%20guilds")
 
+# --- FIXED CALLBACK ROUTE ---
 @app.get("/callback")
-async def callback(code: str):
+async def callback(code: str = None):
+    # If they open /callback without a code, just send them home
+    if not code:
+        return RedirectResponse("/")
+
     data = {
         'client_id': CLIENT_ID,
         'client_secret': CLIENT_SECRET,
@@ -76,7 +81,6 @@ async def get_user_guilds(request: Request):
     
     for g in user_guilds:
         perms = int(g.get('permissions', 0))
-        # Check if user has Admin (0x8) or Manage Server (0x20)
         if (perms & 0x8) == 0x8 or (perms & 0x20) == 0x20: 
             g['has_bot'] = int(g['id']) in bot_guild_ids
             g['invite_url'] = f"https://discord.com/api/oauth2/authorize?client_id={CLIENT_ID}&permissions=8&scope=bot%20applications.commands&guild_id={g['id']}"
