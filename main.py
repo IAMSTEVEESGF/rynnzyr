@@ -24,7 +24,6 @@ ai_client = AsyncOpenAI(
 
 last_actions = {}
 
-# --- THIS STARTS THE BOT WHEN FASTAPI STARTS ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     token = os.getenv("DISCORD_TOKEN")
@@ -32,7 +31,7 @@ async def lifespan(app: FastAPI):
         print("❌ ERROR: DISCORD_TOKEN is missing in Railway Variables!")
     else:
         print("⏳ Starting Discord Bot...")
-        asyncio.create_task(bot.start(token)) # Start bot in background
+        asyncio.create_task(bot.start(token)) 
     yield
     if not bot.is_closed():
         await bot.close()
@@ -43,9 +42,14 @@ class ChatRequest(BaseModel):
     guild_id: int
     prompt: str
 
+# --- THIS BLOCKS THE BROWSER FROM CACHING THE OLD WEBSITE ---
 @app.get("/")
 async def serve_website():
-    return HTMLResponse(content=open("index.html", "r").read())
+    response = HTMLResponse(content=open("index.html", "r").read())
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 @app.get("/login")
 async def login():
@@ -81,7 +85,7 @@ async def callback(code: str = None):
 @app.get("/api/user-guilds")
 async def get_user_guilds(request: Request):
     if not bot.is_ready():
-        return {"error": "The Discord bot is currently offline or starting up. Check Railway logs."}
+        return {"error": "The Discord bot is currently offline or starting up."}
 
     token = request.cookies.get("discord_token")
     if not token:
@@ -107,7 +111,7 @@ async def get_user_guilds(request: Request):
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     if not bot.is_ready():
-        return {"error": "Bot is offline. Check Railway logs."}
+        return {"error": "Bot is offline."}
     return await handle_chat(req.guild_id, req.prompt)
 
 @app.post("/api/undo")
