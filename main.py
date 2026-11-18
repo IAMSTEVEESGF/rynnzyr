@@ -42,7 +42,7 @@ class ChatRequest(BaseModel):
     guild_id: int
     prompt: str
 
-# --- THIS BLOCKS THE BROWSER FROM CACHING THE OLD WEBSITE ---
+# Blocks the browser from caching the old website
 @app.get("/")
 async def serve_website():
     response = HTMLResponse(content=open("index.html", "r").read())
@@ -121,9 +121,16 @@ async def undo_endpoint(req: ChatRequest):
     return await handle_undo(req.guild_id)
 
 async def handle_chat(guild_id, prompt):
+    # 1. Try to get server from bot's memory
     guild = bot.get_guild(guild_id)
+    
+    # 2. If memory fails, FORCE Discord to tell us if the bot is in the server
     if not guild:
-        return {"error": "Bot is not in this server!"}
+        try:
+            guild = await bot.fetch_guild(guild_id)
+            await guild.fetch_channels()
+        except Exception:
+            return {"error": "Discord says the bot is NOT in this server. Double check that you invited the correct bot."}
         
     state_lines = []
     count = 0
