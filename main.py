@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from openai import AsyncOpenAI
-import threading
+from contextlib import asynccontextmanager
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
@@ -22,9 +22,22 @@ ai_client = AsyncOpenAI(
     api_key=os.getenv("GROQ_API_KEY") 
 )
 
-app = FastAPI()
 last_actions = {}
-bot_loop = None
+
+# --- THIS STARTS THE BOT WHEN FASTAPI STARTS ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    token = os.getenv("DISCORD_TOKEN")
+    if not token:
+        print("❌ ERROR: DISCORD_TOKEN is missing in Railway Variables!")
+    else:
+        print("⏳ Starting Discord Bot...")
+        asyncio.create_task(bot.start(token)) # Start bot in background
+    yield
+    if not bot.is_closed():
+        await bot.close()
+
+app = FastAPI(lifespan=lifespan)
 
 class ChatRequest(BaseModel):
     guild_id: int
@@ -40,10 +53,8 @@ async def login():
         return HTMLResponse("<h1>Error: CLIENT_ID or REDIRECT_URI missing in Railway Variables.</h1>")
     return RedirectResponse(f"https://discord.com/api/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=identify%20guilds")
 
-# --- FIXED CALLBACK ROUTE ---
 @app.get("/callback")
 async def callback(code: str = None):
-    # If they open /callback without a code, just send them home
     if not code:
         return RedirectResponse("/")
 
@@ -69,6 +80,9 @@ async def callback(code: str = None):
 
 @app.get("/api/user-guilds")
 async def get_user_guilds(request: Request):
+    if not bot.is_ready():
+        return {"error": "The Discord bot is currently offline or starting up. Check Railway logs."}
+
     token = request.cookies.get("discord_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not logged in")
@@ -92,17 +106,15 @@ async def get_user_guilds(request: Request):
 
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
-    if not bot.is_ready() or not bot_loop:
+    if not bot.is_ready():
         return {"error": "Bot is offline. Check Railway logs."}
-    future = asyncio.run_coroutine_threadsafe(handle_chat(req.guild_id, req.prompt), bot_loop)
-    return future.result()
+    return await handle_chat(req.guild_id, req.prompt)
 
 @app.post("/api/undo")
 async def undo_endpoint(req: ChatRequest):
-    if not bot.is_ready() or not bot_loop:
+    if not bot.is_ready():
         return {"error": "Bot is offline."}
-    future = asyncio.run_coroutine_threadsafe(handle_undo(req.guild_id), bot_loop)
-    return future.result()
+    return await handle_undo(req.guild_id)
 
 async def handle_chat(guild_id, prompt):
     guild = bot.get_guild(guild_id)
@@ -197,22 +209,7 @@ async def handle_undo(guild_id):
 
 @bot.event
 async def on_ready():
-    global bot_loop
-    bot_loop = asyncio.get_running_loop()
     print(f"✅ Bot online as {bot.user}")
 
-def run_web():
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
-
 if __name__ == "__main__":
-    threading.Thread(target=run_web, daemon=True).start()
-    
-    print("⏳ Starting Discord Bot...")
-    try:
-        token = os.getenv("DISCORD_TOKEN")
-        if not token:
-            print("❌ ERROR: DISCORD_TOKEN is missing in Railway Variables!")
-        else:
-            bot.run(token)
-    except Exception as e:
-        print(f"❌ BOT CRASHED: {e}")
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
