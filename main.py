@@ -1,7 +1,6 @@
 import asyncio
 import os
 from contextlib import asynccontextmanager
-from typing import Literal
 
 import discord
 import httpx
@@ -51,6 +50,10 @@ class GuildRequest(BaseModel):
 class PlanRequest(BaseModel):
     guild_id: int
     prompt: str = Field(min_length=3, max_length=1000)
+
+
+# Backwards-compatible request model for the legacy /api/chat endpoint.
+ChatRequest = PlanRequest
 
 
 class ApplyRequest(BaseModel):
@@ -134,7 +137,7 @@ async def user_guilds(request: Request):
             "has_bot": has_bot,
             "invite_url": None if has_bot else (
                 "https://discord.com/api/oauth2/authorize"
-                f"?client_id={CLIENT_ID}&permissions=402653184&scope=bot%20applications.commands"
+                f"?client_id={CLIENT_ID}&permissions=268435472&scope=bot%20applications.commands"
                 f"&guild_id={guild_id}"
             ),
         })
@@ -250,7 +253,6 @@ async def apply_plan(req: ApplyRequest):
     created_ids: list[str] = []
     created = []
 
-    member_role = guild.default_role
     try:
         for role_spec in plan["roles"]:
             existing = discord.utils.get(guild.roles, name=role_spec["name"])
@@ -325,7 +327,7 @@ async def undo(req: GuildRequest):
             item = guild.get_channel(object_id)
         if item:
             try:
-                await item.delete(reason="Undo by Rynnzyr AI server architectt")
+                await item.delete(reason="Undo by Rynnzyr AI server architect")
                 deleted += 1
                 await asyncio.sleep(0.25)
             except discord.Forbidden:
