@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 from contextlib import asynccontextmanager
 
 import discord
@@ -136,7 +137,6 @@ def guild_or_error(guild_id: int) -> discord.Guild:
 
 
 def is_voice_channel(channel) -> bool:
-    # discord.py uses VoiceChannel and StageChannel; VocalGuildChannel is not public API.
     return isinstance(channel, (discord.VoiceChannel, discord.StageChannel))
 
 
@@ -149,16 +149,38 @@ def safe_state(guild: discord.Guild) -> dict:
                                if channel.category is None and isinstance(channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel))][:30]}
 
 
+def clean_text(value: object, limit: int = 100) -> str:
+    text = str(value or "").replace("@everyone", "everyone").replace("@here", "here")
+    text = re.sub(r"[\r\n\t\x00-\x1f]", " ", text)
+    return " ".join(text.split())[:limit].strip()
+
+
 def sanitize_name(value, fallback="community"):
-    text = str(value or "").strip().lower()
+    text = clean_text(value, 100).lower()
     text = "".join(char if char.isalnum() or char in "-_ " else "-" for char in text)
     text = "-".join(text.split())[:100].strip("-")
     return text or fallback
 
 
+def sanitize_channel_name(value, emoji="💬") -> str:
+    """Keep the screenshot-inspired emoji frame while making the channel slug Discord-friendly."""
+    raw = clean_text(value, 100)
+    match = re.match(r"^[〔【\[（(](.+?)[〕】\]）)]\s*[・•|:：-]*\s*(.*)$", raw)
+    if match:
+        icon = clean_text(match.group(1), 12) or emoji
+        body = match.group(2)
+    else:
+        icon = clean_text(emoji, 12) or "💬"
+        body = raw
+    body = body.lower()
+    body = "".join(char if char.isalnum() or char in "-_ " else "-" for char in body)
+    body = "-".join(body.split()).strip("-")[:75] or "chat"
+    return f"〔{icon}〕・{body}"[:100]
+
+
 def sanitize_plan(plan: dict) -> dict:
     roles = []
-    for item in (plan.get("roles") or [])[:8]:
+    for item in (plan.get("roles") or [])[:10]:
         if not isinstance(item, dict):
             continue
         name = sanitize_name(item.get("name"), "member").replace("-", " ").title()
@@ -170,32 +192,37 @@ def sanitize_plan(plan: dict) -> dict:
             color = 0x5865F2
         roles.append({"name": name[:100], "color": max(0, min(color, 0xFFFFFF)), "hoist": bool(item.get("hoist")), "mentionable": bool(item.get("mentionable"))})
     categories = []
-    for item in (plan.get("categories") or [])[:12]:
+    total_channels = 0
+    for item in (plan.get("categories") or [])[:15]:
         if not isinstance(item, dict):
             continue
         channels = []
-        for channel in (item.get("channels") or [])[:8]:
-            if not isinstance(channel, dict):
+        for channel in (item.get("channels") or [])[:12]:
+            if not isinstance(channel, dict) or total_channels >= 120:
                 continue
             channel_type = "voice" if channel.get("type") == "voice" else "text"
-            channels.append({"name": sanitize_name(channel.get("name")), "type": channel_type,
-                             "topic": str(channel.get("topic") or "")[:1024] if channel_type == "text" else ""})
-        categories.append({"name": str(item.get("name") or "Community")[:100], "channels": channels})
-    return {"summary": str(plan.get("summary") or "Professional server layout")[:500], "roles": roles, "categories": categories}
+            channels.append({"name": sanitize_channel_name(channel.get("name"), channel.get("emoji", "💬")),
+                             "type": channel_type,
+                             "topic": clean_text(channel.get("topic", ""), 1024) if channel_type == "text" else ""})
+            total_channels += 1
+        categories.append({"name": clean_text(item.get("name") or "✨ : COMMUNITY : ✨", 100), "channels": channels})
+    return {"summary": clean_text(plan.get("summary") or "A polished server layout", 500), "roles": roles, "categories": categories}
 
 
 async def generate_plan(guild: discord.Guild, prompt: str) -> dict:
     system_prompt = f"""
-You are Rynnzyr, an expert Discord server architect. Design a polished server for the user's request.
+You are Rynnzyr, a creative, context-aware Discord server designer. Build a complete, attractive server that feels specifically designed for the user's topic, not a generic template.
+Infer the community type and create useful, distinct sections and channels that fit it. Adapt the number and purpose of sections to the request: typically 5-10 categories and 3-8 channels per category for a full server; make a smaller design for a small/simple request. Avoid unrelated sections and duplicates. If the user asks for trading, gaming, a creator fan community, a business, or something else, use vocabulary and features appropriate to that exact community.
+Visual style matters: category names should look like designed Discord dividers, e.g. "📊 : SERVER INFORMATION : 📊", "💬 : COMMUNITY : 🎙️", "✨ : GIVEAWAYS : 🎁". Use fitting, varied emojis and uppercase category titles. Channel names MUST use this format: "〔📚〕・rules", "〔📣〕・announcements", "〔🎙️〕・general-chat". Choose a relevant emoji for every channel; do not repeat one emoji for every channel. Avoid plain unstyled channel names. Use appropriate text/voice types, and add short useful topics for key text channels.
 Return only valid JSON with this schema:
-{{"summary":"short explanation","roles":[{{"name":"Role","color":"#5865F2","hoist":false,"mentionable":false}}],"categories":[{{"name":"Category","channels":[{{"name":"channel-name","type":"text or voice","topic":"optional"}}]}}]}}
-Limits: 8 roles, 12 categories, 8 channels/category. Never create administrator-permission roles. Keep names concise.
-Current server: {json.dumps(safe_state(guild), ensure_ascii=False)}
+{{"summary":"short explanation","roles":[{{"name":"Role","color":"#5865F2","hoist":false,"mentionable":false}}],"categories":[{{"name":"✨ : COMMUNITY : ✨","channels":[{{"name":"〔💬〕・general-chat","emoji":"💬","type":"text","topic":"Welcome and chat with the community"}}]}}]}}
+Limits: at most 10 roles, 15 categories, 12 channels per category, 120 channels total. Never create roles with administrator permissions. Include only roles and channels that serve the requested community. Make sure essential onboarding, rules, announcements, support, and voice/community spaces are included when appropriate. Keep channel names within Discord's 100-character limit.
+Existing server to improve or build upon: {json.dumps(safe_state(guild), ensure_ascii=False)}
 """
     response = await get_ai_client().chat.completions.create(
         model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
         messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
-        temperature=0.35, max_tokens=1800, response_format={"type": "json_object"},
+        temperature=0.65, max_tokens=5000, response_format={"type": "json_object"},
     )
     content = response.choices[0].message.content
     if not content:
