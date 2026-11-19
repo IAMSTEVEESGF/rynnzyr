@@ -325,7 +325,7 @@ async def undo(req: GuildRequest):
             item = guild.get_channel(object_id)
         if item:
             try:
-                await item.delete(reason="Undo by Rynnzyr AI server architect")
+                await item.delete(reason="Undo by Rynnzyr AI server architectt")
                 deleted += 1
                 await asyncio.sleep(0.25)
             except discord.Forbidden:
