@@ -22,6 +22,40 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 undo_snapshots: dict[int, list[str]] = {}
 
+# Fixed reference layout: these categories and channels are always created first,
+# in this exact order. AI-generated, topic-specific sections are added after them.
+CORE_LAYOUT = [
+    {"name": "──── ⟪STAFF GENERAL⟫ ────", "private": True, "channels": [
+        ("📚", "staff-rules", "text"), ("📣", "staff-announcements", "text"),
+        ("💬", "staff-chat", "text"), ("🎉", "staff-promotions", "text"),
+        ("🗂️", "staff-logs", "text"), ("⚠️", "staff-demotions", "text"),
+        ("🎙️", "STAFF VC", "voice"),
+    ]},
+    {"name": "──── ⟪WELCOME⟫ ────", "private": False, "channels": [
+        ("🛤️", "invite-tracker", "text"), ("👋", "welcome", "text"), ("🕊️", "goodbye", "text"),
+    ]},
+    {"name": "──── ⟪VERIFICATION⟫ ────", "private": False, "channels": [
+        ("✅", "verification", "text"),
+    ]},
+    {"name": "──── ⟪IMPORTANT⟫ ────", "private": False, "channels": [
+        ("📚", "rules", "text"), ("📣", "announcements", "text"), ("📊", "sab-leaks", "text"),
+        ("🚀", "server-boosts", "text"), ("⚡", "boosters-rewards", "text"), ("📊", "polls", "text"),
+        ("⚠️", "scammers", "text"), ("📝", "applications", "text"), ("🔄", "server-updates", "text"),
+        ("🏅", "hall-of-fame", "text"), ("🎬", "content", "text"), ("🎟️", "support-ticket", "text"),
+    ]},
+    {"name": "──── ⟪MIDDLEMAN⟫ ────", "private": False, "channels": [
+        ("💫", "verified-middleman", "text"), ("🎫", "middleman-ticket", "text"), ("✅", "middleman-vouches", "text"),
+    ]},
+    {"name": "──── ⟪GIVEAWAYS⟫ ────", "private": False, "channels": [
+        ("🎉", "giveaways", "text"), ("🎰", "flash-giveaways", "text"),
+        ("📸", "giveaways-vouches", "text"), ("🎮", "GIVEAWAYS VC", "voice"),
+    ]},
+    {"name": "──── ⟪GENERAL⟫ ────", "private": False, "channels": [
+        ("💬", "general", "text"), ("📸", "media", "text"), ("⚙️", "commands", "text"),
+        ("📊", "levels", "text"), ("🛠️", "suggestions", "text"),
+    ]},
+]
+
 
 def get_ai_client() -> AsyncOpenAI:
     key = os.getenv("GROQ_API_KEY")
@@ -53,9 +87,6 @@ class GuildRequest(BaseModel):
 class PlanRequest(BaseModel):
     guild_id: int
     prompt: str = Field(min_length=3, max_length=1000)
-
-
-ChatRequest = PlanRequest
 
 
 class ApplyRequest(BaseModel):
@@ -111,13 +142,13 @@ async def user_guilds(request: Request):
         raise HTTPException(401, "Discord login expired")
     result = []
     for item in response.json():
-        perms = int(item.get("permissions", 0))
-        if not (perms & 0x8 or perms & 0x20):
+        permissions = int(item.get("permissions", 0))
+        if not (permissions & 0x8 or permissions & 0x20):
             continue
-        gid = int(item["id"])
-        has_bot = bot.get_guild(gid) is not None
-        result.append({"id": gid, "name": item["name"], "icon": item.get("icon"), "has_bot": has_bot,
-                       "invite_url": None if has_bot else f"https://discord.com/api/oauth2/authorize?client_id={CLIENT_ID}&permissions=268435472&scope=bot%20applications.commands&guild_id={gid}"})
+        guild_id = int(item["id"])
+        has_bot = bot.get_guild(guild_id) is not None
+        result.append({"id": guild_id, "name": item["name"], "icon": item.get("icon"), "has_bot": has_bot,
+                       "invite_url": None if has_bot else f"https://discord.com/api/oauth2/authorize?client_id={CLIENT_ID}&permissions=268435472&scope=bot%20applications.commands&guild_id={guild_id}"})
     return {"guilds": result}
 
 
@@ -125,12 +156,12 @@ def guild_or_error(guild_id: int) -> discord.Guild:
     guild = bot.get_guild(guild_id)
     if guild is None:
         raise HTTPException(404, "Bot is not in this server")
-    me = guild.me
-    if me is None:
+    member = guild.me
+    if member is None:
         raise HTTPException(503, "Bot membership is not available yet")
-    if not me.guild_permissions.manage_channels:
+    if not member.guild_permissions.manage_channels:
         raise HTTPException(403, "Bot needs Manage Channels permission")
-    if not me.guild_permissions.manage_roles:
+    if not member.guild_permissions.manage_roles:
         raise HTTPException(403, "Bot needs Manage Roles permission")
     return guild
 
@@ -140,10 +171,11 @@ def is_voice_channel(channel):
 
 
 def safe_state(guild: discord.Guild) -> dict:
-    roles = [{"name": r.name, "position": r.position} for r in guild.roles if not r.managed]
-    categories = [{"name": c.name, "channels": [{"name": ch.name, "type": "voice" if is_voice_channel(ch) else "text"} for ch in c.channels]} for c in guild.categories[:30]]
+    roles = [{"name": role.name, "position": role.position} for role in guild.roles if not role.managed]
+    categories = [{"name": category.name, "channels": [{"name": channel.name, "type": "voice" if is_voice_channel(channel) else "text"} for channel in category.channels]} for category in guild.categories[:30]]
     return {"name": guild.name, "roles": roles[-20:], "categories": categories,
-            "uncategorized": [{"name": ch.name, "type": "voice" if is_voice_channel(ch) else "text"} for ch in guild.channels if ch.category is None and isinstance(ch, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel))][:30]}
+            "uncategorized": [{"name": channel.name, "type": "voice" if is_voice_channel(channel) else "text"} for channel in guild.channels
+                               if channel.category is None and isinstance(channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel))][:30]}
 
 
 def clean_text(value, limit=100):
@@ -154,7 +186,7 @@ def clean_text(value, limit=100):
 
 def sanitize_name(value, fallback="community"):
     text = clean_text(value, 100).lower()
-    text = "".join(c if c.isalnum() or c in "-_ " else "-" for c in text)
+    text = "".join(char if char.isalnum() or char in "-_ " else "-" for char in text)
     return "-".join(text.split())[:100].strip("-") or fallback
 
 
@@ -163,14 +195,27 @@ def sanitize_channel_name(value, emoji="💬"):
     match = re.match(r"^[〔【\[（(](.+?)[〕】\]）)]\s*[・•|:：-]*\s*(.*)$", raw)
     icon, body = (clean_text(match.group(1), 12) or emoji, match.group(2)) if match else (clean_text(emoji, 12) or "💬", raw)
     body = body.lower()
-    body = "".join(c if c.isalnum() or c in "-_ " else "-" for c in body)
+    body = "".join(char if char.isalnum() or char in "-_ " else "-" for char in body)
     body = "-".join(body.split()).strip("-")[:75] or "chat"
     return f"〔{icon}〕・{body}"[:100]
 
 
-def is_staff_category(name):
-    low = name.lower()
-    return "staff" in low or "mod team" in low or "moderator only" in low
+def normalize_category(value):
+    return re.sub(r"[^a-z0-9]+", "", str(value).lower())
+
+
+def category_alias(name):
+    key = normalize_category(name)
+    for alias, canonical in (
+        ("staffgeneral", "staff"), ("staff", "staff"), ("staffonly", "staff"),
+        ("welcome", "welcome"), ("verification", "verification"),
+        ("important", "important"), ("serverinformation", "important"), ("information", "important"),
+        ("middleman", "middleman"), ("giveaways", "giveaways"),
+        ("general", "general"), ("community", "general"),
+    ):
+        if alias in key:
+            return canonical
+    return None
 
 
 def sanitize_plan(plan: dict) -> dict:
@@ -186,54 +231,62 @@ def sanitize_plan(plan: dict) -> dict:
         except (ValueError, TypeError):
             color = 0x5865F2
         roles.append({"name": name[:100], "color": max(0, min(color, 0xFFFFFF)), "hoist": bool(item.get("hoist")), "mentionable": bool(item.get("mentionable"))})
-    categories, total = [], 0
-    for item in (plan.get("categories") or [])[:16]:
+
+    # Start with every reference category in the exact requested order.
+    categories = []
+    core_by_key = {}
+    for core in CORE_LAYOUT:
+        category = {"name": core["name"], "staff_only": core["private"], "channels": [
+            {"name": sanitize_channel_name(channel_name, emoji), "type": kind, "topic": ""}
+            for emoji, channel_name, kind in core["channels"]
+        ]}
+        categories.append(category)
+        core_by_key["staff" if core["private"] else normalize_category(core["name"]).replace("staffgeneral", "staff")] = category
+    # Explicit, stable aliases: avoid fuzzy matching unrelated topic categories into the core.
+    core_by_key.update({"welcome": categories[1], "verification": categories[2], "important": categories[3],
+                        "serverinformation": categories[3], "middleman": categories[4], "giveaways": categories[5],
+                        "general": categories[6], "community": categories[6], "staff": categories[0]})
+
+    extras = []
+    count = sum(len(category["channels"]) for category in categories)
+    for item in (plan.get("categories") or [])[:20]:
         if not isinstance(item, dict):
             continue
         name = clean_text(item.get("name") or "✨ : COMMUNITY : ✨", 100)
-        channels = []
+        key = category_alias(name)
+        target = core_by_key.get(key) if key else None
         for channel in (item.get("channels") or [])[:12]:
-            if not isinstance(channel, dict) or total >= 120:
+            if not isinstance(channel, dict) or count >= 120:
                 continue
             kind = "voice" if channel.get("type") == "voice" else "text"
-            channels.append({"name": sanitize_channel_name(channel.get("name"), channel.get("emoji", "💬")), "type": kind,
-                             "topic": clean_text(channel.get("topic", ""), 1024) if kind == "text" else ""})
-            total += 1
-        categories.append({"name": name, "staff_only": bool(item.get("staff_only")) or is_staff_category(name), "channels": channels})
-    foundation = [
-        ("📊 : SERVER INFORMATION : 📊", [("📚", "rules", "text"), ("📣", "announcements", "text"), ("🗳️", "polls", "text")]),
-        ("👋 : WELCOME : 👋", [("👋", "welcome", "text"), ("🕊️", "goodbye", "text"), ("🧭", "introductions", "text")]),
-        ("✅ : VERIFICATION : ✅", [("✅", "verification", "text"), ("🎭", "get-your-roles", "text")]),
-        ("💬 : COMMUNITY : 🎙️", [("💬", "general", "text"), ("📸", "media", "text"), ("💡", "suggestions", "text"), ("🎙️", "community-voice", "voice")]),
-        ("🔒 : STAFF GENERAL : 🔒", [("📚", "staff-rules", "text"), ("📣", "staff-announcements", "text"), ("💬", "staff-chat", "text"), ("🎉", "staff-promotions", "text"), ("🗂️", "staff-logs", "text"), ("⚠️", "staff-demotions", "text"), ("🎙️", "staff-vc", "voice")]),
-    ]
-    for category_name, definitions in foundation:
-        found = next((c for c in categories if c["name"].casefold() == category_name.casefold()), None)
-        if found is None:
-            found = {"name": category_name, "staff_only": category_name.startswith("🔒"), "channels": []}
-            categories.append(found)
-        names = {ch["name"].casefold() for ch in found["channels"]}
-        for emoji, channel_name, kind in definitions:
-            formatted = sanitize_channel_name(channel_name, emoji)
-            if formatted.casefold() not in names and total < 120:
-                found["channels"].append({"name": formatted, "type": kind, "topic": ""})
-                names.add(formatted.casefold())
-                total += 1
-        if found["name"].startswith("🔒"):
-            found["staff_only"] = True
-    return {"summary": clean_text(plan.get("summary") or "A polished server layout", 500), "roles": roles, "categories": categories[:16]}
+            entry = {"name": sanitize_channel_name(channel.get("name"), channel.get("emoji", "💬")), "type": kind,
+                     "topic": clean_text(channel.get("topic", ""), 1024) if kind == "text" else ""}
+            dest = target
+            if dest is None:
+                extra_key = normalize_category(name)
+                dest = next((category for category in extras if normalize_category(category["name"]) == extra_key), None)
+                if dest is None:
+                    dest = {"name": name, "staff_only": False, "channels": []}
+                    extras.append(dest)
+            if entry["name"].casefold() not in {existing["name"].casefold() for existing in dest["channels"]}:
+                dest["channels"].append(entry)
+                count += 1
+    # Never permit the AI to mark Important or other default sections private.
+    categories.extend(extras)
+    return {"summary": clean_text(plan.get("summary") or "A custom community server blueprint", 500), "roles": roles, "categories": categories[:20]}
 
 
 async def generate_plan(guild: discord.Guild, prompt: str) -> dict:
     instructions = f"""
-You are Rynnzyr, an expert Discord community architect. Build a full, polished layout personalized to the user's exact request. Infer community type and create useful, non-duplicate categories and channels specific to the topic. Typical full design: 7-12 categories, 4-9 channels each; smaller request gets a smaller topical design. Keep the core areas SERVER INFORMATION, WELCOME, VERIFICATION, COMMUNITY, STAFF GENERAL and their standard channels, adding topic-specific channels when useful. Add several topic-specific categories; examples: trading -> marketplace, middleman, vouchers, trade-chat; gaming -> game modes, lfg, clips, team voice; creator -> content, fan-art, streams, collabs. Never include unrelated categories.
-Style: category titles are decorative dividers, e.g. "📊 : SERVER INFORMATION : 📊" or "✨ : GIVEAWAYS : 🎁". Each channel name uses "〔📚〕・rules" with varied fitting emoji. Use a sensible text/voice mix and useful topics. STAFF GENERAL must have staff_only=true. Do not mark other areas private.
-Return only JSON: {{"summary":"...","roles":[{{"name":"Moderator","color":"#5865F2","hoist":false,"mentionable":false}}],"categories":[{{"name":"🎮 : GAME LOUNGE : 🎮","staff_only":false,"channels":[{{"name":"〔🎮〕・game-chat","emoji":"🎮","type":"text","topic":"..."}}]}}]}}
-Limits: max 12 roles, 16 categories, 12 channels/category, 120 total. No administrator permission roles. Include staff-rules, staff-announcements, staff-chat, staff-promotions, staff-logs, staff-demotions, staff-vc in private staff area.
+You are Rynnzyr, an expert Discord community architect. Build a high-quality Discord server tailored to the user's exact request. Keep the standard categories and their channels out of your JSON; the app inserts those in a fixed order. Return 5-9 genuinely useful EXTRA categories for the requested topic, each with around 4-8 useful channels; use fewer only for a simple request. Choose relevant, specific ideas, never generic filler or the same emoji on every channel. Examples: a trading community may need marketplace, trade-chat, middleman requests, vouches and vouchers; a gaming group may need LFG, game modes, clips, teams, scrims and voice rooms; a creator server may need streams, content drops, fan-art and collabs. Only include sections that fit the user's prompt. Use decorative category titles such as "💎 : MIDDLEMAN SERVICE : 💸". Channel names must look like "〔💸〕・trade-chat". Include a mix of text and voice and helpful topics. Suggest safe roles without permissions.
+Return only JSON: {{"summary":"...","roles":[{{"name":"Moderator","color":"#5865F2","hoist":false,"mentionable":false}}],"categories":[{{"name":"💎 : TRADING : 💸","channels":[{{"name":"〔💸〕・trade-chat","emoji":"💸","type":"text","topic":"Discuss trades"}}]}}]}}
+Limits: 12 roles, 9 extra categories, 12 channels/category, 100 extra channels. Never use administrator permissions. Do not output standard categories: Staff General, Welcome, Verification, Important, Middleman, Giveaways, or General.
 Existing server: {json.dumps(safe_state(guild), ensure_ascii=False)}
 """
-    response = await get_ai_client().chat.completions.create(model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
-        messages=[{"role": "system", "content": instructions}, {"role": "user", "content": prompt}], temperature=0.7, max_tokens=6000, response_format={"type": "json_object"})
+    response = await get_ai_client().chat.completions.create(
+        model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
+        messages=[{"role": "system", "content": instructions}, {"role": "user", "content": prompt}],
+        temperature=0.75, max_tokens=6000, response_format={"type": "json_object"})
     content = response.choices[0].message.content
     if not content:
         raise RuntimeError("AI returned an empty design")
@@ -242,22 +295,25 @@ Existing server: {json.dumps(safe_state(guild), ensure_ascii=False)}
 
 async def apply_guild_plan(guild: discord.Guild, plan: dict) -> list[str]:
     plan = sanitize_plan(plan)
-    ids, created, roles = [], [], {}
+    created_ids, created, roles = [], [], {}
     for spec in plan["roles"]:
         role = discord.utils.get(guild.roles, name=spec["name"])
         if role is None:
             role = await guild.create_role(name=spec["name"], colour=discord.Colour(spec["color"]), hoist=spec["hoist"], mentionable=spec["mentionable"], reason="Created by Rynnzyr AI server architect")
-            ids.append(f"role:{role.id}")
+            created_ids.append(f"role:{role.id}")
             created.append(f"Role: {role.name}")
         roles[role.name.casefold()] = role
-    staff_role = next((role for name, role in roles.items() if any(word in name for word in ("staff", "moderator", "mod"))), None) or discord.utils.get(guild.roles, name="Staff")
+
+    staff_role = next((role for name, role in roles.items() if any(word in name for word in ("staff", "moderator", "mod"))), None)
+    staff_role = staff_role or discord.utils.get(guild.roles, name="Staff")
     if staff_role is None:
         staff_role = await guild.create_role(name="Staff", colour=discord.Colour(0x5865F2), reason="Private staff access role for Rynnzyr")
-        ids.append(f"role:{staff_role.id}")
-        created.append("Role: Staff (assign to trusted staff members for staff-category access)")
-    for spec in plan["categories"]:
+        created_ids.append(f"role:{staff_role.id}")
+        created.append("Role: Staff (assign trusted staff members to this role)")
+
+    # Apply in blueprint sequence. Public categories use an empty dict, as required by discord.py.
+    for category_index, spec in enumerate(plan["categories"]):
         private = bool(spec.get("staff_only"))
-        # discord.py requires overwrites to be a dict, even for public categories.
         overwrites = {}
         if private:
             overwrites = {
@@ -266,22 +322,31 @@ async def apply_guild_plan(guild: discord.Guild, plan: dict) -> list[str]:
             }
         category = discord.utils.get(guild.categories, name=spec["name"])
         if category is None:
-            category = await guild.create_category(spec["name"], overwrites=overwrites, reason="Created by Rynnzyr AI server architect")
-            ids.append(f"category:{category.id}")
-            created.append(f"Category: {category.name}" + (" (private staff area)" if private else ""))
+            category = await guild.create_category(spec["name"], overwrites=overwrites, position=category_index, reason="Created by Rynnzyr AI server architect")
+            created_ids.append(f"category:{category.id}")
+            created.append(f"Category: {category.name}" + (" (staff-only)" if private else ""))
         elif private:
-            await category.edit(overwrites=overwrites, reason="Secure staff category for Rynnzyr")
-        for channel_spec in spec["channels"]:
-            if discord.utils.get(category.channels, name=channel_spec["name"]):
-                continue
-            if channel_spec["type"] == "voice":
-                channel = await guild.create_voice_channel(channel_spec["name"], category=category, reason="Created by Rynnzyr AI server architect")
+            await category.edit(overwrites=overwrites, position=category_index, reason="Secure and order staff category")
+        else:
+            await category.edit(position=category_index, reason="Order categories to match blueprint")
+
+        for channel_index, channel_spec in enumerate(spec["channels"]):
+            channel = discord.utils.get(category.channels, name=channel_spec["name"])
+            if channel is None:
+                if channel_spec["type"] == "voice":
+                    channel = await guild.create_voice_channel(channel_spec["name"], category=category, reason="Created by Rynnzyr AI server architect")
+                else:
+                    channel = await guild.create_text_channel(channel_spec["name"], category=category, topic=channel_spec["topic"] or None, reason="Created by Rynnzyr AI server architect")
+                created_ids.append(f"channel:{channel.id}")
+                created.append(f"{channel_spec['type'].title()}: {channel_spec['name']}")
             else:
-                channel = await guild.create_text_channel(channel_spec["name"], category=category, topic=channel_spec["topic"] or None, reason="Created by Rynnzyr AI server architect")
-            ids.append(f"channel:{channel.id}")
-            created.append(f"{channel_spec['type'].title()}: {channel_spec['name']}")
-            await asyncio.sleep(0.35)
-    undo_snapshots[guild.id] = ids
+                if private:
+                    await channel.edit(sync_permissions=True, position=channel_index, reason="Sync staff channel privacy and order")
+                else:
+                    await channel.edit(position=channel_index, reason="Order channels to match blueprint")
+            await asyncio.sleep(0.25)
+
+    undo_snapshots[guild.id] = created_ids
     return created
 
 
@@ -290,14 +355,13 @@ def make_plan_embed(guild: discord.Guild, plan: dict) -> discord.Embed:
     for category in plan["categories"]:
         if len(embed.fields) >= 24:
             break
-        lines = [("🔊 " if ch["type"] == "voice" else "# ") + ch["name"] for ch in category["channels"]]
+        lines = [("🔊 " if channel["type"] == "voice" else "# ") + channel["name"] for channel in category["channels"]]
         if category.get("staff_only"):
-            lines.append("🔒 Private — Staff role access")
-        value = "\n".join(lines) or "No channels"
-        embed.add_field(name=category["name"], value=value[:1024], inline=True)
+            lines.append("🔒 Staff-only — access through the Staff role")
+        embed.add_field(name=category["name"], value=("\n".join(lines) or "No channels")[:1024], inline=True)
     if plan["roles"] and len(embed.fields) < 25:
-        embed.add_field(name="Suggested roles", value=", ".join(r["name"] for r in plan["roles"][:12])[:1024], inline=False)
-    embed.set_footer(text="Review the layout, then build it or cancel.")
+        embed.add_field(name="Suggested roles", value=", ".join(role["name"] for role in plan["roles"][:12])[:1024], inline=False)
+    embed.set_footer(text="Reference layout first; custom channels for your community follow. Review, then build or cancel.")
     return embed
 
 
@@ -323,8 +387,8 @@ class BlueprintView(discord.ui.View):
         await interaction.response.edit_message(view=self)
         try:
             changes = await apply_guild_plan(self.guild, self.plan)
-            result = "\n".join(f"• {item}" for item in changes[:35]) or "Everything already exists."
-            await interaction.followup.send(f"✅ **Server built!**\n{result}\n\nAssign trusted members to the **Staff** role for private staff-channel access.", ephemeral=True)
+            result = "\n".join(f"• {item}" for item in changes[:35]) or "The blueprint already exists."
+            await interaction.followup.send(f"✅ **Server built!**\n{result}\n\nAssign trusted members to the **Staff** role for private staff channels.", ephemeral=True)
         except discord.Forbidden:
             await interaction.followup.send("Discord denied a change. Check Manage Channels/Manage Roles permissions and role position.", ephemeral=True)
         except Exception as exc:
@@ -366,8 +430,8 @@ async def undo(req: GuildRequest):
     deleted = 0
     for entry in reversed(ids):
         kind, raw_id = entry.split(":", 1)
-        obj_id = int(raw_id)
-        item = discord.utils.get(guild.roles, id=obj_id) if kind == "role" else guild.get_channel(obj_id)
+        object_id = int(raw_id)
+        item = discord.utils.get(guild.roles, id=object_id) if kind == "role" else guild.get_channel(object_id)
         if item:
             try:
                 await item.delete(reason="Undo by Rynnzyr AI server architect")
@@ -393,8 +457,8 @@ async def design(interaction: discord.Interaction, prompt: str):
     if not isinstance(member, discord.Member) or not (member.guild_permissions.manage_guild or member.guild_permissions.administrator):
         await interaction.response.send_message("You need Manage Server permission to use this command.", ephemeral=True)
         return
-    me = interaction.guild.me
-    if me is None or not (me.guild_permissions.manage_channels and me.guild_permissions.manage_roles):
+    bot_member = interaction.guild.me
+    if bot_member is None or not (bot_member.guild_permissions.manage_channels and bot_member.guild_permissions.manage_roles):
         await interaction.response.send_message("I need Manage Channels and Manage Roles permissions.", ephemeral=True)
         return
     await interaction.response.defer(ephemeral=True, thinking=True)
