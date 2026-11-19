@@ -79,12 +79,7 @@ def login():
     if not all((CLIENT_ID, REDIRECT_URI)):
         return HTMLResponse("Missing CLIENT_ID or REDIRECT_URI", status_code=500)
     from urllib.parse import urlencode
-    query = urlencode({
-        "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
-        "response_type": "code",
-        "scope": "identify guilds",
-    })
+    query = urlencode({"client_id": CLIENT_ID, "redirect_uri": REDIRECT_URI, "response_type": "code", "scope": "identify guilds"})
     return RedirectResponse(f"https://discord.com/api/oauth2/authorize?{query}")
 
 
@@ -92,19 +87,9 @@ def login():
 async def callback(code: str | None = None):
     if not code:
         return RedirectResponse("/?error=auth_failed")
-    data = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": REDIRECT_URI,
-    }
+    data = {"client_id": CLIENT_ID, "client_secret": CLIENT_SECRET, "grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI}
     async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://discord.com/api/oauth2/token",
-            data=data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
+        response = await client.post("https://discord.com/api/oauth2/token", data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
     token = response.json().get("access_token")
     if not token:
         return RedirectResponse("/?error=auth_failed")
@@ -120,15 +105,10 @@ async def user_guilds(request: Request):
     access_token = request.cookies.get("discord_token")
     if not access_token:
         raise HTTPException(401, "Not logged in")
-
     async with httpx.AsyncClient() as client:
-        response = await client.get(
-            "https://discord.com/api/users/@me/guilds",
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
+        response = await client.get("https://discord.com/api/users/@me/guilds", headers={"Authorization": f"Bearer {access_token}"})
     if response.status_code != 200:
         raise HTTPException(401, "Discord login expired")
-
     result = []
     for user_guild in response.json():
         permissions = int(user_guild.get("permissions", 0))
@@ -136,17 +116,8 @@ async def user_guilds(request: Request):
             continue
         guild_id = int(user_guild["id"])
         has_bot = bot.get_guild(guild_id) is not None
-        result.append({
-            "id": guild_id,
-            "name": user_guild["name"],
-            "icon": user_guild.get("icon"),
-            "has_bot": has_bot,
-            "invite_url": None if has_bot else (
-                "https://discord.com/api/oauth2/authorize"
-                f"?client_id={CLIENT_ID}&permissions=268435472&scope=bot%20applications.commands"
-                f"&guild_id={guild_id}"
-            ),
-        })
+        result.append({"id": guild_id, "name": user_guild["name"], "icon": user_guild.get("icon"), "has_bot": has_bot,
+                       "invite_url": None if has_bot else f"https://discord.com/api/oauth2/authorize?client_id={CLIENT_ID}&permissions=268435472&scope=bot%20applications.commands&guild_id={guild_id}"})
     return {"guilds": result}
 
 
@@ -164,25 +135,18 @@ def guild_or_error(guild_id: int) -> discord.Guild:
     return guild
 
 
+def is_voice_channel(channel) -> bool:
+    # discord.py uses VoiceChannel and StageChannel; VocalGuildChannel is not public API.
+    return isinstance(channel, (discord.VoiceChannel, discord.StageChannel))
+
+
 def safe_state(guild: discord.Guild) -> dict:
     roles = [{"name": role.name, "position": role.position} for role in guild.roles if not role.managed]
-    categories = [{
-        "name": category.name,
-        "channels": [{
-            "name": channel.name,
-            "type": "voice" if isinstance(channel, discord.VocalGuildChannel) else "text",
-        } for channel in category.channels],
-    } for category in guild.categories[:30]]
-    return {
-        "name": guild.name,
-        "roles": roles[-20:],
-        "categories": categories,
-        "uncategorized": [{
-            "name": channel.name,
-            "type": "voice" if isinstance(channel, discord.VocalGuildChannel) else "text",
-        } for channel in guild.channels
-            if channel.category is None and isinstance(channel, (discord.TextChannel, discord.VocalGuildChannel))][:30],
-    }
+    categories = [{"name": category.name, "channels": [{"name": channel.name, "type": "voice" if is_voice_channel(channel) else "text"} for channel in category.channels]}
+                  for category in guild.categories[:30]]
+    return {"name": guild.name, "roles": roles[-20:], "categories": categories,
+            "uncategorized": [{"name": channel.name, "type": "voice" if is_voice_channel(channel) else "text"} for channel in guild.channels
+                               if channel.category is None and isinstance(channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel))][:30]}
 
 
 def sanitize_name(value, fallback="community"):
@@ -204,11 +168,7 @@ def sanitize_plan(plan: dict) -> dict:
             color = int(str(item.get("color", "#5865F2")).lstrip("#"), 16)
         except (ValueError, TypeError):
             color = 0x5865F2
-        roles.append({
-            "name": name[:100], "color": max(0, min(color, 0xFFFFFF)),
-            "hoist": bool(item.get("hoist")), "mentionable": bool(item.get("mentionable")),
-        })
-
+        roles.append({"name": name[:100], "color": max(0, min(color, 0xFFFFFF)), "hoist": bool(item.get("hoist")), "mentionable": bool(item.get("mentionable"))})
     categories = []
     for item in (plan.get("categories") or [])[:12]:
         if not isinstance(item, dict):
@@ -218,17 +178,10 @@ def sanitize_plan(plan: dict) -> dict:
             if not isinstance(channel, dict):
                 continue
             channel_type = "voice" if channel.get("type") == "voice" else "text"
-            channels.append({
-                "name": sanitize_name(channel.get("name")),
-                "type": channel_type,
-                "topic": str(channel.get("topic") or "")[:1024] if channel_type == "text" else "",
-            })
+            channels.append({"name": sanitize_name(channel.get("name")), "type": channel_type,
+                             "topic": str(channel.get("topic") or "")[:1024] if channel_type == "text" else ""})
         categories.append({"name": str(item.get("name") or "Community")[:100], "channels": channels})
-    return {
-        "summary": str(plan.get("summary") or "Professional server layout")[:500],
-        "roles": roles,
-        "categories": categories,
-    }
+    return {"summary": str(plan.get("summary") or "Professional server layout")[:500], "roles": roles, "categories": categories}
 
 
 async def generate_plan(guild: discord.Guild, prompt: str) -> dict:
@@ -239,13 +192,10 @@ Return only valid JSON with this schema:
 Limits: 8 roles, 12 categories, 8 channels/category. Never create administrator-permission roles. Keep names concise.
 Current server: {json.dumps(safe_state(guild), ensure_ascii=False)}
 """
-    client = get_ai_client()
-    response = await client.chat.completions.create(
+    response = await get_ai_client().chat.completions.create(
         model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
         messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
-        temperature=0.35,
-        max_tokens=1800,
-        response_format={"type": "json_object"},
+        temperature=0.35, max_tokens=1800, response_format={"type": "json_object"},
     )
     content = response.choices[0].message.content
     if not content:
@@ -260,37 +210,22 @@ async def apply_guild_plan(guild: discord.Guild, plan: dict) -> list[str]:
     for spec in plan["roles"]:
         if discord.utils.get(guild.roles, name=spec["name"]):
             continue
-        role = await guild.create_role(
-            name=spec["name"], colour=discord.Colour(spec["color"]),
-            hoist=spec["hoist"], mentionable=spec["mentionable"],
-            reason="Created by Rynnzyr AI server architect",
-        )
+        role = await guild.create_role(name=spec["name"], colour=discord.Colour(spec["color"]), hoist=spec["hoist"], mentionable=spec["mentionable"], reason="Created by Rynnzyr AI server architect")
         created_ids.append(f"role:{role.id}")
         created.append(f"Role: {role.name}")
-
     for category_spec in plan["categories"]:
         category = discord.utils.get(guild.categories, name=category_spec["name"])
         if category is None:
-            category = await guild.create_category(
-                category_spec["name"],
-                reason="Created by Rynnzyr AI server architect",
-            )
+            category = await guild.create_category(category_spec["name"], reason="Created by Rynnzyr AI server architect")
             created_ids.append(f"category:{category.id}")
             created.append(f"Category: {category.name}")
         for channel_spec in category_spec["channels"]:
             if discord.utils.get(category.channels, name=channel_spec["name"]):
                 continue
             if channel_spec["type"] == "voice":
-                channel = await guild.create_voice_channel(
-                    channel_spec["name"], category=category,
-                    reason="Created by Rynnzyr AI server architect",
-                )
+                channel = await guild.create_voice_channel(channel_spec["name"], category=category, reason="Created by Rynnzyr AI server architect")
             else:
-                channel = await guild.create_text_channel(
-                    channel_spec["name"], category=category,
-                    topic=channel_spec["topic"] or None,
-                    reason="Created by Rynnzyr AI server architect",
-                )
+                channel = await guild.create_text_channel(channel_spec["name"], category=category, topic=channel_spec["topic"] or None, reason="Created by Rynnzyr AI server architect")
             created_ids.append(f"channel:{channel.id}")
             created.append(f"{channel_spec['type'].title()}: {channel_spec['name']}")
             await asyncio.sleep(0.35)
@@ -311,8 +246,7 @@ async def create_plan(req: PlanRequest):
 async def apply_plan(req: ApplyRequest):
     guild = guild_or_error(req.guild_id)
     try:
-        created = await apply_guild_plan(guild, req.plan)
-        return {"success": True, "created": created}
+        return {"success": True, "created": await apply_guild_plan(guild, req.plan)}
     except discord.Forbidden:
         raise HTTPException(403, "Bot is missing Discord permissions")
     except discord.HTTPException as exc:
@@ -352,18 +286,13 @@ async def design(interaction: discord.Interaction, prompt: str):
         await interaction.response.send_message("Use this command inside a server.", ephemeral=True)
         return
     member = interaction.user
-    if not isinstance(member, discord.Member) or not (
-        member.guild_permissions.manage_guild or member.guild_permissions.administrator
-    ):
+    if not isinstance(member, discord.Member) or not (member.guild_permissions.manage_guild or member.guild_permissions.administrator):
         await interaction.response.send_message("You need Manage Server permission to use this command.", ephemeral=True)
         return
     bot_member = interaction.guild.me
-    if bot_member is None or not (
-        bot_member.guild_permissions.manage_channels and bot_member.guild_permissions.manage_roles
-    ):
+    if bot_member is None or not (bot_member.guild_permissions.manage_channels and bot_member.guild_permissions.manage_roles):
         await interaction.response.send_message("I need Manage Channels and Manage Roles permissions.", ephemeral=True)
         return
-
     await interaction.response.defer(ephemeral=True, thinking=True)
     try:
         plan = await generate_plan(interaction.guild, prompt[:1000])
