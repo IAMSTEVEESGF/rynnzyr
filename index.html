@@ -1,190 +1,99 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>AI Discord Manager</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f0f13; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden;}
-        .container { width: 100%; max-width: 800px; height: 90vh; background: #1a1a20; border-radius: 12px; border: 1px solid #2a2a35; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-weight: bold; font-size: 18px; }
-        .login-btn { background: #5865F2; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; text-decoration: none;}
-        
-        /* Server Grid */
-        .guild-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; overflow-y: auto; flex: 1; }
-        .guild-card { background: #2a2a35; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; align-items: center; text-align: center; }
-        .guild-icon { width: 64px; height: 64px; border-radius: 50%; background: #0f0f13; margin-bottom: 10px; display: flex; justify-content: center; align-items: center; font-size: 24px; font-weight: bold; background-size: cover; background-position: center; }
-        .guild-name { font-weight: bold; margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
-        .guild-btn { background: #5865F2; color: white; border: none; padding: 8px; border-radius: 5px; cursor: pointer; width: 100%; text-decoration: none; font-size: 14px; box-sizing: border-box; display: block;}
-        .guild-btn.invite { background: #23a559; }
-        
-        /* Chat UI */
-        #chat-ui { display: none; flex-direction: column; height: 100%; }
-        .chat-box { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
-        .message { background: #2a2a35; padding: 12px 16px; border-radius: 8px; width: fit-content; max-width: 80%; }
-        .user-message { background: #5865F2; align-self: flex-end; }
-        .bot-message { align-self: flex-start; }
-        .steps { font-size: 14px; color: #a3a3b3; margin-top: 5px; }
-        .input-area { display: flex; gap: 10px; }
-        input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #2a2a35; background: #0f0f13; color: white; outline: none; }
-        button { background: #5865F2; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        .back-btn { background: #4f545c; margin-right: 10px; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Rynnzyr — AI Discord Architect</title>
+  <style>
+    :root { --bg:#090a0f; --panel:#12141b; --panel2:#191c25; --text:#f7f8ff; --muted:#9da3b4; --brand:#7c83ff; --brand2:#a78bfa; --green:#57e39a; --border:#292c38; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:radial-gradient(circle at 15% 0%,#20245a 0,transparent 28%),var(--bg); color:var(--text); }
+    .shell { max-width:1180px; height:100vh; margin:auto; display:flex; flex-direction:column; padding:18px; }
+    .topbar { height:64px; display:flex; align-items:center; justify-content:space-between; border:1px solid var(--border); background:rgba(18,20,27,.88); backdrop-filter:blur(18px); border-radius:18px; padding:0 18px; }
+    .brand { display:flex; align-items:center; gap:12px; font-weight:800; letter-spacing:-.3px; }
+    .logo { width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,var(--brand),var(--brand2));box-shadow:0 8px 30px #7c83ff55; }
+    .login,.icon-btn,.primary { border:0;border-radius:10px;color:white;background:var(--brand);font-weight:750;padding:11px 16px;text-decoration:none;cursor:pointer; }
+    .workspace { min-height:0; flex:1; display:grid; grid-template-columns:310px 1fr; gap:16px; margin-top:16px; }
+    .sidebar,.architect { border:1px solid var(--border); background:rgba(18,20,27,.94); border-radius:18px; min-height:0; }
+    .sidebar { padding:14px; overflow:auto; }
+    .sidebar h3 { margin:8px 8px 14px;font-size:13px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted); }
+    .guild { display:flex;align-items:center;gap:11px;width:100%;border:1px solid transparent;background:transparent;color:white;border-radius:12px;padding:9px;margin:3px 0;text-align:left;cursor:pointer; }
+    .guild:hover,.guild.active { background:var(--panel2);border-color:var(--border); }
+    .guild-icon { width:44px;height:44px;border-radius:50%;object-fit:cover;background:#30344a;display:grid;place-items:center;font-weight:800;flex:none;background-size:cover; }
+    .guild-name { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;flex:1; }
+    .invite { color:var(--green);font-size:12px;font-weight:800;text-decoration:none; }
+    .architect { display:flex;flex-direction:column;overflow:hidden; }
+    .chat { flex:1;overflow:auto;padding:24px; }
+    .message { max-width:78%; padding:13px 15px;border-radius:14px;line-height:1.5;margin:8px 0; }
+    .assistant { background:var(--panel2);border:1px solid var(--border); }
+    .user { margin-left:auto;background:linear-gradient(135deg,#626aee,#8065dc); }
+    .plan { margin-top:12px;display:grid;gap:8px; }
+    .plan-card { padding:10px 12px;border-radius:10px;background:#101219;border:1px solid var(--border); }
+    .composer { display:flex;gap:10px;padding:14px;border-top:1px solid var(--border); }
+    input { flex:1;border:1px solid var(--border);border-radius:12px;background:#0d0f15;color:white;padding:14px 16px;outline:none;font-size:15px; }
+    input:focus { border-color:var(--brand);box-shadow:0 0 0 3px #7c83ff22; }
+    .actions { display:flex;gap:8px;padding:0 14px 14px; }
+    .actions button { padding:10px 14px;border-radius:10px;border:1px solid var(--border);color:white;background:var(--panel2);cursor:pointer;font-weight:750; }
+    .actions .apply { border:0;background:var(--green);color:#09110d; }
+    .empty { height:100%;display:grid;place-items:center;text-align:center;color:var(--muted); }
+    .empty strong { display:block;color:white;font-size:20px;margin-bottom:6px; }
+    code { color:#bfc4ff; }
+    @media(max-width:800px){ .workspace{grid-template-columns:1fr}.sidebar{display:none}.shell{padding:8px}.chat{padding:14px}.message{max-width:92%} }
+  </style>
 </head>
 <body>
-
-<div class="container">
-    <div class="header">
-        <div style="display:flex; align-items:center;">
-            <button class="back-btn" id="back-btn" style="display:none;" onclick="showDashboard()">← Back</button>
-            <span>✨ AI Server Manager</span>
-        </div>
-        <a href="/login" class="login-btn" id="login-btn">Login with Discord</a>
-    </div>
-
-    <!-- DASHBOARD VIEW -->
-    <div id="dashboard" class="guild-grid">
-        <div style="grid-column: 1/-1; text-align: center; color: #a3a3b3; margin-top: 50px;">
-            Please login to view your servers.
-        </div>
-    </div>
-
-    <!-- CHAT VIEW -->
-    <div id="chat-ui">
-        <div class="chat-box" id="chat-box">
-            <div class="message bot-message">Hello! Tell me how to build or tidy your server.</div>
-        </div>
-        <div class="input-area">
-            <input type="text" id="prompt" placeholder="Make me a steal a brainrot roblox server pls" onkeypress="handleKeyPress(event)">
-            <button onclick="sendPrompt()">Send</button>
-        </div>
-        <button class="undo-btn" id="undo-btn" style="display:none; margin-top:10px; background: #2a2a35;" onclick="undoAction()">Undo Last Action</button>
-    </div>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand"><div class="logo">R</div><div>Rynnzyr <span style="color:var(--muted);font-weight:600">AI Architect</span></div></div>
+    <a class="login" id="login" href="/login">Login with Discord</a>
+  </header>
+  <main class="workspace">
+    <aside class="sidebar"><h3>Your servers</h3><div id="guilds"></div></aside>
+    <section class="architect">
+      <div class="chat" id="chat">
+        <div class="empty"><div><strong>Design a server with one message</strong>Log in and choose a server to begin.</div></div>
+      </div>
+      <div class="actions" id="actions" style="display:none"><button onclick="undo()">Undo last changes</button><button class="apply" onclick="applyPlan()">Apply server design</button></div>
+      <div class="composer"><input id="prompt" maxlength="1000" placeholder="Example: Make a professional esports community with 8 teams and a tournament system"><button class="primary" onclick="sendPrompt()">Design</button></div>
+    </section>
+  </main>
 </div>
-
 <script>
-    let activeGuildId = null;
-
-    window.onload = async () => {
-        // Try to load guilds (cookie will auto-auth if they just logged in)
-        loadGuilds();
-    };
-
-    async function loadGuilds() {
-        try {
-            const res = await fetch('/api/user-guilds');
-            if (res.status === 401) {
-                // Not logged in, do nothing (shows login button)
-                return; 
-            }
-            
-            const data = await res.json();
-            document.getElementById('login-btn').style.display = 'none';
-            const grid = document.getElementById('dashboard');
-            grid.innerHTML = '';
-
-            if (!data.guilds || data.guilds.length === 0) {
-                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;">No servers found where you have Admin.</div>';
-                return;
-            }
-
-            data.guilds.forEach(g => {
-                const iconUrl = g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png` : '';
-                const card = document.createElement('div');
-                card.className = 'guild-card';
-                
-                if (g.has_bot) {
-                    card.innerHTML = `
-                        <div class="guild-icon" style="background-image:url('${iconUrl}');">${!iconUrl ? g.name[0] : ''}</div>
-                        <div class="guild-name">${g.name}</div>
-                        <button class="guild-btn" onclick="openChat('${g.id}', '${g.name}')">Manage</button>
-                    `;
-                } else {
-                    card.innerHTML = `
-                        <div class="guild-icon" style="background-image:url('${iconUrl}');">${!iconUrl ? g.name[0] : ''}</div>
-                        <div class="guild-name">${g.name}</div>
-                        <a href="${g.invite_url}" target="_blank" class="guild-btn invite">Invite Bot</a>
-                    `;
-                }
-                grid.appendChild(card);
-            });
-        } catch(e) { console.error(e); }
-    }
-
-    function openChat(id, name) {
-        activeGuildId = id;
-        document.getElementById('dashboard').style.display = 'none';
-        document.getElementById('chat-ui').style.display = 'flex';
-        document.getElementById('back-btn').style.display = 'block';
-        document.getElementById('login-btn').style.display = 'none';
-        document.getElementById('chat-box').innerHTML = `<div class="message bot-message">Connected to <b>${name}</b>. What should I do?</div>`;
-    }
-
-    function showDashboard() {
-        document.getElementById('chat-ui').style.display = 'none';
-        document.getElementById('dashboard').style.display = 'grid';
-        document.getElementById('back-btn').style.display = 'none';
-    }
-
-    async function sendPrompt() {
-        const promptInput = document.getElementById('prompt');
-        const prompt = promptInput.value;
-        if (!prompt || !activeGuildId) return;
-
-        addMessage(prompt, 'user-message');
-        promptInput.value = '';
-        
-        const chatBox = document.getElementById('chat-box');
-        const loadingMsg = document.createElement('div');
-        loadingMsg.className = 'message bot-message';
-        loadingMsg.innerHTML = 'Thinking...';
-        chatBox.appendChild(loadingMsg);
-        chatBox.scrollTop = chatBox.scrollHeight;
-
-        try {
-            const response = await fetch(`/api/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ guild_id: parseInt(activeGuildId), prompt: prompt })
-            });
-            const data = await response.json();
-            loadingMsg.remove();
-
-            if (data.error) {
-                addMessage(`Error: ${data.error}`, 'bot-message');
-            } else if (data.steps && data.steps.length > 0) {
-                const stepsHTML = data.steps.map(s => `✓ ${s}`).join('<br>');
-                addMessage(`<b>Steps done:</b><div class="steps">${stepsHTML}</div>`, 'bot-message');
-                document.getElementById('undo-btn').style.display = 'block';
-            } else {
-                addMessage(`AI didn't make any changes. Output:<br><code>${data.raw}</code>`, 'bot-message');
-            }
-        } catch (e) {
-            loadingMsg.remove();
-            addMessage("Failed to connect.", 'bot-message');
-        }
-    }
-
-    async function undoAction() {
-        const response = await fetch(`/api/undo`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ guild_id: parseInt(activeGuildId), prompt: "" })
-        });
-        const data = await response.json();
-        addMessage(data.success || data.error, 'bot-message');
-        document.getElementById('undo-btn').style.display = 'none';
-    }
-
-    function addMessage(text, className) {
-        const chatBox = document.getElementById('chat-box');
-        const msg = document.createElement('div');
-        msg.className = `message ${className}`;
-        msg.innerHTML = text;
-        chatBox.appendChild(msg);
-        chatBox.scrollTop = chatBox.scrollHeight;
-    }
-
-    function handleKeyPress(e) { if (e.key === 'Enter') sendPrompt(); }
+let guildId=null, currentPlan=null;
+window.onload=loadGuilds;
+async function loadGuilds(){
+  const res=await fetch('/api/user-guilds');
+  if(res.status===401)return;
+  const data=await res.json();
+  if(data.error){document.getElementById('guilds').innerHTML=`<p style="color:#aaa">${data.error}</p>`;return}
+  document.getElementById('login').style.display='none';
+  const box=document.getElementById('guilds');box.innerHTML='';
+  data.guilds.forEach(g=>{
+    const el=document.createElement(g.has_bot?'button':'a');el.className=g.has_bot?'guild':'';
+    if(g.has_bot){el.onclick=()=>openGuild(g)}else{el.href=g.invite_url;el.target='_blank';el.className='guild'}
+    el.innerHTML=`<div class="guild-icon" ${g.icon?`style="background-image:url('https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png')"`:''}>${g.icon?'':g.name[0]}</div><div class="guild-name">${escapeHtml(g.name)}</div>${g.has_bot?'': '<span class="invite">Invite</span>'}`;
+    box.appendChild(el);
+  });
+}
+function openGuild(g){guildId=g.id;document.querySelectorAll('.guild').forEach(x=>x.classList.remove('active'));event.currentTarget?.classList.add('active');document.getElementById('chat').innerHTML=`<div class="message assistant">Connected to <b>${escapeHtml(g.name)}</b>. Describe the server you want.</div>`}
+async function sendPrompt(){
+  if(!guildId)return alert('Choose a server first');
+  const input=document.getElementById('prompt');const prompt=input.value.trim();if(prompt.length<3)return;
+  add(prompt,'user');input.value='';
+  const loading=add('Designing the perfect layout…','assistant');
+  try{const res=await fetch('/api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guild_id:guildId,prompt})});const data=await res.json();loading.remove();if(data.detail)return add(`Error: ${data.detail}`,'assistant');currentPlan=data.plan;renderPlan(data.plan)}catch(e){loading.remove();add('Could not reach Rynnzyr.','assistant')}
+}
+function renderPlan(p){
+  let html=`<div><b>${escapeHtml(p.summary)}</b><div class="plan">`;
+  p.roles?.forEach(r=>html+=`<div class="plan-card">Role — <b>${escapeHtml(r.name)}</b></div>`);
+  p.categories?.forEach(c=>{html+=`<div class="plan-card"><b>${escapeHtml(c.name)}</b><br>`;c.channels.forEach(ch=>html+=`<span style="color:var(--muted)">${ch.type==='voice?'#⸭':'#'}</span> ${escapeHtml(ch.name)}<br>`);html+='</div>'});
+  html+='</div></div>';addHtml(html,'assistant');document.getElementById('actions').style.display='flex';
+}
+async function applyPlan(){if(!guildId||!currentPlan)return;const box=add('Creating roles, categories, and channels…','assistant');try{const res=await fetch('/api/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guild_id:guildId,plan:currentPlan})});const data=await res.json();box.remove();addHtml(data.success?`<b>Server updated.</b><br>${data.created.map(escapeHtml).join('<br>')}`:`Error: ${escapeHtml(data.detail||'Could not apply')}`,'assistant');}catch(e){box.remove();add('Failed to apply changes.','assistant')}}
+async function undo(){if(!guildId)return;const res=await fetch('/api/undo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guild_id:guildId})});const data=await res.json();add(data.success?`Undid ${data.deleted} created items.`:data.error,'assistant')}
+function add(text,cls){const el=document.createElement('div');el.className=`message ${cls}`;el.textContent=text;document.getElementById('chat').appendChild(el);el.scrollIntoView({block:'end'});return el}
+function addHtml(html,cls){const el=document.createElement('div');el.className=`message ${cls}`;el.innerHTML=html;document.getElementById('chat').appendChild(el);el.scrollIntoView({block:'end'});return el}
+function escapeHtml(v){const d=document.createElement('div');d.textContent=v==null?'':String(v);return d.innerHTML}
 </script>
 </body>
 </html>
