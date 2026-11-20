@@ -17,68 +17,17 @@ from pydantic import BaseModel, Field
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
+
 intents = discord.Intents.default()
 intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 undo_snapshots: dict[int, list[str]] = {}
 
-# Fixed reference foundations. General intentionally ends at suggestions;
-# personalized categories are separate and follow these sections.
-CORE_LAYOUT = [
-    {"name": "──── ⟪STAFF GENERAL⟫ ────", "private": True, "channels": [
-        ("📚", "staff-rules", "text"), ("📣", "staff-announcements", "text"),
-        ("💬", "staff-chat", "text"), ("🎉", "staff-promotions", "text"),
-        ("🗂️", "staff-logs", "text"), ("⚠️", "staff-demotions", "text"), ("🎙️", "staff-vc", "voice")
-    ]},
-    {"name": "──── ⟪WELCOME⟫ ────", "private": False, "channels": [
-        ("🛤️", "invite-tracker", "text"), ("👋", "welcome", "text"), ("🕊️", "goodbye", "text")
-    ]},
-    {"name": "──── ⟪VERIFICATION⟫ ────", "private": False, "channels": [("✅", "verification", "text")]},
-    {"name": "──── ⟪IMPORTANT⟫ ────", "private": False, "channels": [
-        ("📚", "rules", "text"), ("📣", "announcements", "text"), ("📊", "sab-leaks", "text"),
-        ("🚀", "server-boosts", "text"), ("⚡", "boosters-rewards", "text"), ("📊", "polls", "text"),
-        ("⚠️", "scammers", "text"), ("📝", "applications", "text"), ("🔄", "server-updates", "text"),
-        ("🏅", "hall-of-fame", "text"), ("🎬", "content", "text"), ("🎟️", "support-ticket", "text")
-    ]},
-    {"name": "──── ⟪MIDDLEMAN⟫ ────", "private": False, "channels": [
-        ("💫", "verified-middleman", "text"), ("🎫", "middleman-ticket", "text"), ("✅", "middleman-vouches", "text")
-    ]},
-    {"name": "──── ⟪GIVEAWAYS⟫ ────", "private": False, "channels": [
-        ("🎉", "giveaways", "text"), ("🎰", "flash-giveaways", "text"),
-        ("📸", "giveaways-vouches", "text"), ("🎮", "giveaways-vc", "voice")
-    ]},
-    {"name": "──── ⟪GENERAL⟫ ────", "private": False, "channels": [
-        ("💬", "general", "text"), ("📸", "media", "text"), ("⚙️", "commands", "text"),
-        ("📊", "levels", "text"), ("🛠️", "suggestions", "text")
-    ]}
-]
 
-EMOJI_BY_TOPIC = {
-    "rule": "📚", "announce": "📣", "news": "📰", "update": "🔄", "poll": "🗳️",
-    "welcome": "👋", "intro": "👋", "goodbye": "🕊️", "invite": "🛤️", "verify": "✅",
-    "role": "🎭", "general": "💬", "chat": "🗨️", "discussion": "🗣️", "media": "📸",
-    "photo": "📷", "video": "🎥", "clip": "🎞️", "stream": "📡", "content": "🎬",
-    "meme": "😂", "suggest": "🛠️", "feedback": "📝", "help": "🆘", "support": "🎟️",
-    "ticket": "🎫", "faq": "❓", "bug": "🐛", "staff": "🛡️", "mod": "🛡️",
-    "log": "🗂️", "application": "📋", "apply": "📋", "promotion": "🎉", "demotion": "⚠️",
-    "boost": "🚀", "reward": "🎁", "giveaway": "🎁", "flash": "⚡", "vouch": "✅",
-    "middleman": "🤝", "trade": "💱", "market": "🛒", "shop": "🏪", "sell": "🏷️",
-    "buy": "💰", "auction": "🔨", "scam": "🚨", "report": "🚨", "level": "📈",
-    "leaderboard": "🏆", "hall": "🏅", "command": "⚙️", "bot": "🤖", "voice": "🔊",
-    "vc": "🎙️", "music": "🎵", "game": "🎮", "gaming": "🎮", "lfg": "🔎",
-    "team": "👥", "squad": "🪖", "match": "⚔️", "rank": "🏆", "tournament": "🥇",
-    "scrim": "🥊", "minecraft": "⛏️", "roblox": "🧱", "fortnite": "🪂", "valorant": "🎯",
-    "fan": "💖", "art": "🎨", "creator": "✨", "collab": "🤝", "event": "📅",
-    "calendar": "📅", "resource": "🧰", "guide": "🧭", "tutorial": "🧑‍🏫", "idea": "💡",
-    "introductions": "👋", "memes": "😂", "clips": "🎞️"
-}
-EMOJI_POOL = ["🌟", "🧩", "🪄", "🧿", "🌈", "🪐", "🦋", "🍀", "🔥", "💎", "🎯", "🧸", "🪷", "🌙", "🪄", "🎨", "🪙", "🧠", "🪁", "💫", "🔮", "🧵", "🎪", "🪸", "🪻", "🧃", "🪩", "🧊", "🧪", "🧭"]
-
-
-def get_ai_client():
+def ai_client():
     key = os.getenv("GROQ_API_KEY")
     if not key:
-        raise RuntimeError("GROQ_API_KEY is not configured in Railway Variables")
+        raise RuntimeError("GROQ_API_KEY is not configured")
     return AsyncOpenAI(base_url="https://api.groq.com/openai/v1", api_key=key)
 
 
@@ -112,6 +61,86 @@ class ApplyRequest(BaseModel):
     plan: dict
 
 
+CORE_LAYOUT = [
+    {"name": "──── ⟪STAFF GENERAL⟫ ────", "private": True, "channels": [
+        ("📚", "staff-rules", "text"), ("📣", "staff-announcements", "text"),
+        ("💬", "staff-chat", "text"), ("🎉", "staff-promotions", "text"),
+        ("🗂️", "staff-logs", "text"), ("⚠️", "staff-demotions", "text"),
+        ("🎙️", "staff-vc", "voice")
+    ]},
+    {"name": "──── ⟪WELCOME⟫ ────", "private": False, "channels": [
+        ("🛤️", "invite-tracker", "text"), ("👋", "welcome", "text"), ("🕊️", "goodbye", "text")
+    ]},
+    {"name": "──── ⟪VERIFICATION⟫ ────", "private": False, "channels": [("✅", "verification", "text")]},
+    {"name": "──── ⟪IMPORTANT⟫ ────", "private": False, "channels": [
+        ("📚", "rules", "text"), ("📣", "announcements", "text"), ("📊", "sab-leaks", "text"),
+        ("🚀", "server-boosts", "text"), ("⚡", "boosters-rewards", "text"), ("📊", "polls", "text"),
+        ("⚠️", "scammers", "text"), ("📝", "applications", "text"), ("🔄", "server-updates", "text"),
+        ("🏅", "hall-of-fame", "text"), ("🎬", "content", "text"), ("🎟️", "support-ticket", "text")
+    ]},
+    {"name": "──── ⟪MIDDLEMAN⟫ ────", "private": False, "channels": [
+        ("💫", "verified-middleman", "text"), ("🎫", "middleman-ticket", "text"), ("✅", "middleman-vouches", "text")
+    ]},
+    {"name": "──── ⟪GIVEAWAYS⟫ ────", "private": False, "channels": [
+        ("🎉", "giveaways", "text"), ("🎰", "flash-giveaways", "text"),
+        ("📸", "giveaways-vouches", "text"), ("🎮", "giveaways-vc", "voice")
+    ]},
+    {"name": "──── ⟪GENERAL⟫ ────", "private": False, "channels": [
+        ("💬", "general", "text"), ("📸", "media", "text"), ("⚙️", "commands", "text"),
+        ("📊", "levels", "text"), ("🛠️", "suggestions", "text")
+    ]}
+]
+
+EMOJI_RULES = {
+    "rule": "📚", "announce": "📣", "news": "📰", "update": "🔄", "poll": "🗳️",
+    "welcome": "👋", "intro": "👋", "goodbye": "🕊️", "invite": "🛤️", "verify": "✅",
+    "general": "💬", "chat": "🗨️", "discussion": "🗣️", "media": "📸", "photo": "📷",
+    "video": "🎥", "clip": "🎞️", "stream": "📡", "content": "🎬", "meme": "😂",
+    "suggest": "🛠️", "feedback": "📝", "help": "🆘", "support": "🎟️", "ticket": "🎫",
+    "faq": "❓", "bug": "🐛", "staff": "🛡️", "log": "🗂️", "application": "📋",
+    "promotion": "🎉", "demotion": "⚠️", "boost": "🚀", "reward": "🎁", "giveaway": "🎁",
+    "trade": "💱", "market": "🛒", "shop": "🏪", "sell": "🏷️", "buy": "💰",
+    "auction": "🔨", "scam": "🚨", "report": "🚨", "level": "📈", "leaderboard": "🏆",
+    "command": "⚙️", "bot": "🤖", "voice": "🔊", "music": "🎵", "game": "🎮",
+    "lfg": "🔎", "team": "👥", "match": "⚔️", "rank": "🥇", "tournament": "🥇",
+    "scrim": "🥊", "minecraft": "⛏️", "roblox": "🧱", "fortnite": "🪂", "valorant": "🎯",
+    "fan": "💖", "art": "🎨", "creator": "✨", "collab": "🤝", "event": "📅",
+    "calendar": "📅", "resource": "🧰", "guide": "🧭", "tutorial": "🧑‍🏫", "idea": "💡",
+}
+FALLBACK_EMOJIS = ["🌟", "🧩", "🪄", "🧿", "🌈", "🪐", "🦋", "🍀", "🔥", "💎", "🧸", "🪷", "🌙", "🎨", "🪙", "🧠", "🪁", "💫", "🔮", "🧵", "🎪", "🪸", "🪻", "🧃", "🧊", "🧪", "🧭"]
+
+ARCHETYPES = {
+    "trading": {
+        "sections": [
+            ("💎 : MARKETPLACE : 💸", [("🛒", "marketplace", "text"), ("💱", "trade-chat", "text"), ("🎯", "trade-requests", "text"), ("🔎", "looking-to-buy", "text"), ("🔨", "auctions", "text"), ("📦", "deal-room", "voice")]),
+            ("🤝 : MIDDLEMAN SERVICE : 🛡️", [("🤝", "request-middleman", "text"), ("📋", "active-deals", "text"), ("✅", "completed-trades", "text"), ("🎫", "deal-support", "text")]),
+            ("⭐ : REPUTATION : 🏆", [("✅", "vouches", "text"), ("⚠️", "scam-reports", "text"), ("🏅", "top-traders", "text")]),
+        ], "roles": [("Verified Trader", 0x57E39A), ("Middleman", 0xF7B84B), ("Trusted Seller", 0x5865F2)]
+    },
+    "gaming": {
+        "sections": [
+            ("🎮 : GAME LOUNGE : 🕹️", [("💬", "game-chat", "text"), ("😂", "clips-and-memes", "text"), ("📸", "screenshots", "text"), ("🎙️", "lobby-chat", "voice")]),
+            ("🔎 : FIND YOUR SQUAD : 🪖", [("🧩", "looking-for-group", "text"), ("👥", "team-up", "text"), ("🎯", "competitive", "text"), ("🧪", "playtesting", "text")]),
+            ("🏆 : COMPETITIVE : ⚔️", [("📅", "matches", "text"), ("📊", "leaderboards", "text"), ("🥇", "tournaments", "text"), ("🥊", "scrim-voice", "voice")]),
+        ], "roles": [("Player", 0x5865F2), ("Competitor", 0xED4245), ("Team Captain", 0xFEE75C)]
+    },
+    "creator": {
+        "sections": [
+            ("📡 : LIVE & CONTENT : 🎬", [("📢", "content-drops", "text"), ("📺", "stream-notifications", "text"), ("🎞️", "latest-clips", "text"), ("🔴", "watch-party", "voice")]),
+            ("🎨 : FAN WORKS : 💖", [("🖼️", "fan-art", "text"), ("✂️", "edits", "text"), ("💡", "content-ideas", "text")]),
+            ("🤝 : COLLABORATIONS : ✨", [("📨", "collab-requests", "text"), ("🧑‍🎤", "creator-network", "text"), ("🎤", "guest-voice", "voice")]),
+        ], "roles": [("Member", 0x5865F2), ("Creator", 0xEB459E), ("Collaborator", 0x57F287)]
+    },
+    "community": {
+        "sections": [
+            ("💬 : COMMUNITY : 🎉", [("👋", "introductions", "text"), ("☕", "general-chat", "text"), ("😂", "memes", "text"), ("📸", "photo-dump", "text"), ("🗣️", "community-voice", "voice")]),
+            ("💡 : COMMUNITY IDEAS : 🧩", [("🛠️", "suggestions", "text"), ("🗳️", "community-polls", "text"), ("🎨", "feedback", "text")]),
+            ("🎉 : EVENTS : 📅", [("📅", "upcoming-events", "text"), ("🎤", "event-stage", "voice"), ("📸", "event-gallery", "text")]),
+        ], "roles": [("Member", 0x5865F2), ("Active Member", 0x57F287), ("Event Host", 0xEB459E)]
+    },
+}
+
+
 def clean_text(value, limit=100):
     text = str(value or "").replace("@everyone", "everyone").replace("@here", "here")
     text = re.sub(r"[\r\n\t\x00-\x1f]", " ", text)
@@ -120,58 +149,51 @@ def clean_text(value, limit=100):
 
 def slug_channel(value):
     raw = clean_text(value, 100)
-    # Strip existing decorative wrappers/emoji to derive a clean semantic slug.
     raw = re.sub(r"^[〔【\[（(].*?[〕】\]）)]\s*[・•|:：-]*\s*", "", raw)
     raw = re.sub(r"^[^\w]+", "", raw, flags=re.UNICODE)
     raw = raw.lower().replace("_", "-")
-    raw = "".join(c if c.isalnum() or c in "- " else "-" for c in raw)
-    return "-".join(raw.split()).strip("-")[:72] or "chat"
+    raw = "".join(ch if ch.isalnum() or ch in "- " else "-" for ch in raw)
+    return "-".join(raw.split()).strip("-")[:72] or "channel"
 
 
-def smart_emoji(slug, category, used):
-    words = slug.replace("-", " ").split()
-    # Prefer the most specific meaning; never blindly reuse one model-generated emoji.
-    ordered = sorted(EMOJI_BY_TOPIC.items(), key=lambda pair: len(pair[0]), reverse=True)
-    chosen = next((emoji for key, emoji in ordered if key in slug and emoji not in used), None)
-    if chosen is None:
-        # Stable, category-sensitive fallback gives varied icons for novel channel concepts.
-        seed = sum(ord(c) for c in f"{category}:{slug}")
-        for offset in range(len(EMOJI_POOL)):
-            candidate = EMOJI_POOL[(seed + offset) % len(EMOJI_POOL)]
-            if candidate not in used:
-                chosen = candidate
-                break
-    chosen = chosen or "💬"
-    used.add(chosen)
-    return chosen
+def choose_emoji(slug, used):
+    ordered = sorted(EMOJI_RULES.items(), key=lambda item: len(item[0]), reverse=True)
+    for keyword, emoji in ordered:
+        if keyword in slug and emoji not in used:
+            return emoji
+    seed = sum(ord(ch) for ch in slug)
+    for offset in range(len(FALLBACK_EMOJIS)):
+        emoji = FALLBACK_EMOJIS[(seed + offset) % len(FALLBACK_EMOJIS)]
+        if emoji not in used:
+            return emoji
+    return "✨"
 
 
-def format_channel(value, category, used, fixed_emoji=None):
-    slug = slug_channel(value)
-    emoji = fixed_emoji or smart_emoji(slug, category, used)
+def format_channel(slug, fixed=None, used=None):
+    slug = slug_channel(slug)
+    if used is None:
+        used = set()
+    emoji = fixed or choose_emoji(slug, used)
     used.add(emoji)
     return f"〔{emoji}〕・{slug}"
 
 
-def is_voice(channel):
-    return isinstance(channel, (discord.VoiceChannel, discord.StageChannel))
-
-
-def safe_state(guild):
-    return {
-        "name": guild.name,
-        "categories": [{"name": category.name, "channels": [{"name": channel.name, "type": "voice" if is_voice(channel) else "text"} for channel in category.channels]} for category in guild.categories[:25]],
-        "roles": [role.name for role in guild.roles if not role.managed][-15:]
+def detect_archetype(prompt):
+    text = prompt.lower()
+    checks = {
+        "trading": ("trade", "trading", "market", "middleman", "sell", "buy", "auction", "voucher", "stock"),
+        "gaming": ("gaming", "game", "esports", "clan", "guild", "minecraft", "roblox", "valorant", "fortnite", "tournament", "scrim"),
+        "creator": ("creator", "stream", "youtube", "twitch", "tiktok", "fan", "artist", "art"),
     }
+    for name, words in checks.items():
+        if any(word in text for word in words):
+            return name
+    return "community"
 
 
 @app.get("/")
 def serve_website():
-    try:
-        with open("index.html", encoding="utf-8") as page:
-            response = HTMLResponse(page.read())
-    except FileNotFoundError:
-        raise HTTPException(500, "index.html is missing from the deployment")
+    response = HTMLResponse(open("index.html", encoding="utf-8").read())
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
 
@@ -216,136 +238,149 @@ async def user_guilds(request: Request):
         permissions = int(item.get("permissions", 0))
         if not (permissions & 0x8 or permissions & 0x20):
             continue
-        gid = int(item["id"])
-        has_bot = bot.get_guild(gid) is not None
-        result.append({"id": gid, "name": item["name"], "icon": item.get("icon"), "has_bot": has_bot,
-                       "invite_url": None if has_bot else f"https://discord.com/api/oauth2/authorize?client_id={CLIENT_ID}&permissions=268435472&scope=bot%20applications.commands&guild_id={gid}"})
+        guild_id = int(item["id"])
+        result.append({"id": guild_id, "name": item["name"], "icon": item.get("icon"), "has_bot": bot.get_guild(guild_id) is not None,
+                       "invite_url": None if bot.get_guild(guild_id) else f"https://discord.com/api/oauth2/authorize?client_id={CLIENT_ID}&permissions=268435472&scope=bot%20applications.commands&guild_id={guild_id}"})
     return {"guilds": result}
 
 
-def get_guild_or_error(guild_id):
+def get_guild(guild_id):
     guild = bot.get_guild(guild_id)
     if guild is None:
         raise HTTPException(404, "Bot is not in this server")
     me = guild.me
     if me is None:
-        raise HTTPException(503, "Bot membership is not available yet")
+        raise HTTPException(503, "Bot membership is not available")
     if not me.guild_permissions.manage_channels or not me.guild_permissions.manage_roles:
-        raise HTTPException(403, "Bot needs Manage Channels and Manage Roles permissions")
+        raise HTTPException(403, "Bot needs Manage Channels and Manage Roles")
     return guild
+
+
+def safe_state(guild):
+    roles = [role.name for role in guild.roles if not role.managed][-15:]
+    categories = [{"name": category.name, "channels": [channel.name for channel in category.channels]} for category in guild.categories[:30]]
+    return {"name": guild.name, "roles": roles, "categories": categories}
 
 
 def sanitize_plan(plan):
     roles = []
-    for role in (plan.get("roles") or [])[:12]:
-        if not isinstance(role, dict):
-            continue
-        name = clean_text(role.get("name"), 100)
-        if name.lower() in {"everyone", "here", "admin", "administrator", "bot"}:
-            continue
-        try:
-            color = int(str(role.get("color", "#5865F2")).lstrip("#"), 16)
-        except (ValueError, TypeError):
-            color = 0x5865F2
-        roles.append({"name": name, "color": max(0, min(color, 0xFFFFFF)), "hoist": bool(role.get("hoist")), "mentionable": bool(role.get("mentionable"))})
-
-    # Always reconstruct the core from constants so AI output cannot append channels
-    # after suggestions, duplicate core sections, or change privacy/order.
-    categories = []
-    for core in CORE_LAYOUT:
-        used = set()
-        entries = []
-        for emoji, channel_name, kind in core["channels"]:
-            entries.append({"name": format_channel(channel_name, core["name"], used, emoji), "type": kind, "topic": ""})
-        categories.append({"name": core["name"], "staff_only": core["private"], "channels": entries})
-
-    # Only genuinely custom categories are accepted. Nothing from model output is
-    # merged into the seven reference categories, so the General section ends at Suggestions.
-    extras = []
-    known_core = {"staff general", "staff", "welcome", "verification", "important", "server information", "middleman", "giveaways", "general", "community"}
-    total = sum(len(item["channels"]) for item in categories)
-    seen_categories = set()
-    for item in (plan.get("categories") or [])[:15]:
+    for item in (plan.get("roles") or [])[:10]:
         if not isinstance(item, dict):
             continue
         name = clean_text(item.get("name"), 100)
-        normalized = re.sub(r"[^a-z0-9 ]", "", name.lower()).strip()
-        if normalized in known_core or any(normalized == core_name for core_name in known_core):
+        if name.lower() in {"everyone", "here", "admin", "administrator", "bot"}:
             continue
-        cat_key = re.sub(r"[^a-z0-9]", "", name.lower())
-        if not cat_key or cat_key in seen_categories:
-            continue
-        seen_categories.add(cat_key)
+        try:
+            color = int(str(item.get("color", "5865F2")).lstrip("#"), 16)
+        except (ValueError, TypeError):
+            color = 0x5865F2
+        roles.append({"name": name, "color": max(0, min(color, 0xFFFFFF)), "hoist": bool(item.get("hoist")), "mentionable": bool(item.get("mentionable"))})
+
+    categories = []
+    for core in CORE_LAYOUT:
         used = set()
+        channels = [{"name": format_channel(channel_name, emoji, used), "type": kind, "topic": ""}
+                    for emoji, channel_name, kind in core["channels"]]
+        categories.append({"name": core["name"], "staff_only": core["private"], "channels": channels})
+
+    extras = plan.get("categories") if isinstance(plan.get("categories"), list) else []
+    for item in extras[:8]:
+        if not isinstance(item, dict):
+            continue
+        name = clean_text(item.get("name"), 100)
+        if not name:
+            continue
         channels = []
+        used = set()
         for channel in (item.get("channels") or [])[:10]:
-            if not isinstance(channel, dict) or total >= 100:
+            if not isinstance(channel, dict):
                 continue
-            slug = slug_channel(channel.get("name"))
-            emoji = smart_emoji(slug, name, used)
             kind = "voice" if channel.get("type") == "voice" else "text"
-            channels.append({"name": f"〔{emoji}〕・{slug}", "type": kind,
+            channels.append({"name": format_channel(channel.get("name"), None, used), "type": kind,
                              "topic": clean_text(channel.get("topic"), 1024) if kind == "text" else ""})
-            total += 1
         if channels:
-            extras.append({"name": name, "staff_only": False, "channels": channels})
-    return {"summary": clean_text(plan.get("summary") or "A custom server blueprint tailored to your community", 500), "roles": roles, "categories": categories + extras}
+            categories.append({"name": name, "staff_only": False, "channels": channels})
+    return {"summary": clean_text(plan.get("summary"), 500), "roles": roles, "categories": categories}
 
 
 async def generate_plan(guild, prompt):
-    instructions = f"""
-Design only the CUSTOM categories for this server. The code creates the fixed reference foundation before your output, so DO NOT output or alter staff, welcome, verification, important, middleman, giveaways, or general categories. General must end at suggestions. Make 3-7 truly useful extra categories specifically for the user's request; avoid broad filler, duplicate purposes, and generic categories. Make names, channels, and topics deeply relevant to their exact community. Examples: a trading request could get 💎 MIDDLEMAN SERVICE, 💱 TRADING FLOOR, 🧾 VOUCHERS; a gaming request could get 🎮 GAME LOUNGE, 🔎 FIND A TEAM, 🏆 COMPETITIVE; a creator request could get 🎬 CONTENT STUDIO, 📡 LIVE NOW, 🎨 FAN WORKS. Use only fitting examples. Make channel names short descriptive slugs and assign a DIFFERENT semantically appropriate emoji to each channel—never reuse one emoji throughout a category. Include helpful voice rooms where appropriate. Return JSON only: {{"summary":"...","roles":[{{"name":"Moderator","color":"#5865F2","hoist":false,"mentionable":false}}],"categories":[{{"name":"🎮 : GAME LOUNGE : 🎮","channels":[{{"name":"game-chat","type":"text","topic":"Chat about the game"}},{{"name":"party-voice","type":"voice"}}]}}]}}. Max 12 safe roles, 7 custom categories, 10 channels/category, 60 custom channels. Never output the fixed foundation categories.
-Current server context: {json.dumps(safe_state(guild), ensure_ascii=False)}
-"""
-    response = await get_ai_client().chat.completions.create(
+    archetype = detect_archetype(prompt)
+    template = ARCHETYPES[archetype]
+
+    response = await ai_client().chat.completions.create(
         model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
-        messages=[{"role": "system", "content": instructions}, {"role": "user", "content": prompt}],
-        temperature=0.8, max_tokens=5000, response_format={"type": "json_object"})
+        messages=[
+            {"role": "system", "content": f"""
+Return JSON only. Create 3-6 highly specific EXTRA categories for the user's community.
+The system already adds fixed reference categories and therefore they must not be returned.
+Detected community type: {archetype}. Use the same quality level as these template ideas:
+{json.dumps(template['sections'])}
+Improve and adapt the ideas rather than copying them blindly. Remove irrelevant sections.
+Create useful channel names, channel types, and short topics.
+Avoid duplicate categories, duplicate channel purposes, and generic emoji names.
+Schema: {{"summary":"...","roles":[{{"name":"...","color":"5865F2","hoist":false,"mentionable":false}}],"categories":[{{"name":"🎮 : GAME LOUNGE : 🎮","channels":[{{"name":"game-chat","type":"text","topic":"..."}}]}}]}}
+"""},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.65,
+        max_tokens=5000,
+        response_format={"type": "json_object"}
+    )
     content = response.choices[0].message.content
     if not content:
         raise RuntimeError("AI returned an empty design")
-    return sanitize_plan(json.loads(content))
+    plan = json.loads(content)
+
+    # Preserve the proven archetype structure even if the model returns weak or incomplete output.
+    if not isinstance(plan.get("categories"), list) or len(plan["categories"]) < 2:
+        plan["categories"] = [{"name": name, "channels": [{"name": slug_channel(channel_name), "type": kind,
+                                                            "topic": ""} for _, channel_name, kind in channels]}
+                               for name, channels in template["sections"]]
+    if not isinstance(plan.get("roles"), list) or len(plan["roles"]) < 3:
+        plan["roles"] = [{"name": name, "color": f"{color:06X}", "hoist": False, "mentionable": False}
+                         for name, color in template["roles"]]
+    return sanitize_plan(plan)
 
 
 async def apply_guild_plan(guild, plan):
     plan = sanitize_plan(plan)
-    created_ids, created = [], []
-    created_roles = {}
+    ids, created = [], []
+
+    roles = {}
     for spec in plan["roles"]:
         role = discord.utils.get(guild.roles, name=spec["name"])
         if role is None:
             role = await guild.create_role(name=spec["name"], colour=discord.Colour(spec["color"]), hoist=spec["hoist"], mentionable=spec["mentionable"], reason="Created by Rynnzyr")
-            created_ids.append(f"role:{role.id}")
+            ids.append(f"role:{role.id}")
             created.append(f"Role: {role.name}")
-        created_roles[role.name.lower()] = role
-    staff_role = next((role for name, role in created_roles.items() if "staff" in name or "moderator" in name or name == "mod"), None)
+        roles[role.name.lower()] = role
+
+    staff_role = next((role for name, role in roles.items() if "staff" in name or "moderator" in name or name == "mod"), None)
     staff_role = staff_role or discord.utils.get(guild.roles, name="Staff")
     if staff_role is None:
-        staff_role = await guild.create_role(name="Staff", colour=discord.Colour(0x5865F2), reason="Private staff category access")
-        created_ids.append(f"role:{staff_role.id}")
-        created.append("Role: Staff — assign to trusted staff members")
+        staff_role = await guild.create_role(name="Staff", colour=discord.Colour(0x5865F2), reason="Private staff access")
+        ids.append(f"role:{staff_role.id}")
+        created.append("Role: Staff")
 
-    # First create/find every category in blueprint order, then explicitly reorder.
     resolved = []
-    for spec in plan["categories"]:
-        private = spec["staff_only"]
+    for position, spec in enumerate(plan["categories"]):
         overwrites = {}
-        if private:
+        if spec["staff_only"]:
             overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False),
                           staff_role: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, connect=True, speak=True)}
         category = discord.utils.get(guild.categories, name=spec["name"])
         if category is None:
             category = await guild.create_category(spec["name"], overwrites=overwrites, reason="Rynnzyr server blueprint")
-            created_ids.append(f"category:{category.id}")
-            created.append(f"Category: {category.name}")
-        elif private:
+            ids.append(f"category:{category.id}")
+            created.append(f"Category: {category.name}" + (" (staff-only)" if spec["staff_only"] else ""))
+        elif spec["staff_only"]:
             await category.edit(overwrites=overwrites, reason="Secure staff category")
-        resolved.append((category, spec, private))
+        resolved.append((category, spec))
 
-    for position, (category, _, _) in enumerate(resolved):
-        await category.edit(position=position, reason="Arrange categories in blueprint order")
+    for position, (category, _) in enumerate(resolved):
+        await category.edit(position=position, reason="Apply blueprint category order")
 
-    for category, spec, private in resolved:
+    for category, spec in resolved:
         for position, channel_spec in enumerate(spec["channels"]):
             channel = discord.utils.get(category.channels, name=channel_spec["name"])
             if channel is None:
@@ -353,43 +388,47 @@ async def apply_guild_plan(guild, plan):
                     channel = await guild.create_voice_channel(channel_spec["name"], category=category, reason="Rynnzyr server blueprint")
                 else:
                     channel = await guild.create_text_channel(channel_spec["name"], category=category, topic=channel_spec["topic"] or None, reason="Rynnzyr server blueprint")
-                created_ids.append(f"channel:{channel.id}")
+                ids.append(f"channel:{channel.id}")
                 created.append(f"{channel_spec['type'].title()}: {channel_spec['name']}")
             else:
-                await channel.edit(position=position, sync_permissions=private, reason="Arrange channels in blueprint order")
+                await channel.edit(position=position, sync_permissions=spec["staff_only"], reason="Apply blueprint channel order")
             await asyncio.sleep(0.2)
-    undo_snapshots[guild.id] = created_ids
+
+    undo_snapshots[guild.id] = ids
     return created
 
 
-def make_plan_embed(guild, plan):
-    embed = discord.Embed(title=f"✨ {guild.name} — Server blueprint", description=plan["summary"], color=0x7C83FF)
+def make_embed(guild, plan):
+    embed = discord.Embed(title=f"✨ {guild.name} — Smart server blueprint", description=plan["summary"] or "A polished, community-specific layout.", color=0x7C83FF)
     for category in plan["categories"]:
         if len(embed.fields) >= 24:
             break
-        lines = [("🔊 " if ch["type"] == "voice" else "# ") + ch["name"] for ch in category["channels"]]
+        lines = [("🔊 " if channel["type"] == "voice" else "# ") + channel["name"] for channel in category["channels"]]
         if category["staff_only"]:
-            lines.append("🔒 Staff-only — access through the Staff role")
+            lines.append("🔒 Staff-only")
         embed.add_field(name=category["name"], value=("\n".join(lines) or "No channels")[:1024], inline=True)
-    embed.set_footer(text="Reference categories first; custom channels are tailored to your prompt. Review, then build or cancel.")
+    embed.set_footer(text="Fixed foundations first • Smart topic sections second • Preview before build")
     return embed
 
 
 class BlueprintView(discord.ui.View):
     def __init__(self, guild, plan, author_id):
         super().__init__(timeout=180)
-        self.guild, self.plan, self.author_id, self.finished = guild, plan, author_id, False
+        self.guild = guild
+        self.plan = plan
+        self.author_id = author_id
+        self.finished = False
 
     async def interaction_check(self, interaction):
         if interaction.user.id != self.author_id:
-            await interaction.response.send_message("Only the person who requested this blueprint can use these buttons.", ephemeral=True)
+            await interaction.response.send_message("Only the requesting server manager can use these buttons.", ephemeral=True)
             return False
         return True
 
     @discord.ui.button(label="Build this server", style=discord.ButtonStyle.success, emoji="🏗️")
     async def build_button(self, interaction, button):
         if self.finished:
-            await interaction.response.send_message("This blueprint has already been handled.", ephemeral=True)
+            await interaction.response.send_message("This blueprint was already handled.", ephemeral=True)
             return
         self.finished = True
         button.disabled = True
@@ -397,13 +436,13 @@ class BlueprintView(discord.ui.View):
         await interaction.response.edit_message(view=self)
         try:
             changes = await apply_guild_plan(self.guild, self.plan)
-            report = "\n".join(f"• {line}" for line in changes[:35]) or "The blueprint already exists."
-            await interaction.followup.send(f"✅ **Server built!**\n{report}\n\nAssign trusted members to **Staff** for private staff channels.", ephemeral=True)
+            report = "\n".join(f"• {line}" for line in changes[:35]) or "Everything already existed."
+            await interaction.followup.send(f"✅ **Server built!**\n{report}", ephemeral=True)
         except discord.Forbidden:
-            await interaction.followup.send("Discord denied a change. Check Manage Channels/Manage Roles permissions and role position.", ephemeral=True)
+            await interaction.followup.send("Discord denied the change. Check Manage Channels and Manage Roles permissions.", ephemeral=True)
         except Exception as exc:
             print(f"Blueprint apply failed: {type(exc).__name__}: {exc}")
-            await interaction.followup.send("Build failed; check Railway logs. Some earlier changes may already have applied.", ephemeral=True)
+            await interaction.followup.send("The build hit an error. Check Railway logs.", ephemeral=True)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="✖️")
     async def cancel_button(self, interaction, button):
@@ -416,7 +455,7 @@ class BlueprintView(discord.ui.View):
 @app.post("/api/plan")
 async def create_plan(req: PlanRequest):
     try:
-        return {"plan": await generate_plan(get_guild_or_error(req.guild_id), req.prompt)}
+        return {"plan": await generate_plan(get_guild(req.guild_id), req.prompt)}
     except Exception as exc:
         raise HTTPException(502, f"AI planning failed: {exc}")
 
@@ -424,7 +463,7 @@ async def create_plan(req: PlanRequest):
 @app.post("/api/apply")
 async def apply_plan(req: ApplyRequest):
     try:
-        return {"success": True, "created": await apply_guild_plan(get_guild_or_error(req.guild_id), req.plan)}
+        return {"success": True, "created": await apply_guild_plan(get_guild(req.guild_id), req.plan)}
     except discord.Forbidden:
         raise HTTPException(403, "Bot is missing Discord permissions")
     except discord.HTTPException as exc:
@@ -433,13 +472,12 @@ async def apply_plan(req: ApplyRequest):
 
 @app.post("/api/undo")
 async def undo(req: GuildRequest):
-    guild = get_guild_or_error(req.guild_id)
+    guild = get_guild(req.guild_id)
     ids = undo_snapshots.pop(guild.id, [])
     deleted = 0
     for entry in reversed(ids):
         kind, raw_id = entry.split(":", 1)
-        item_id = int(raw_id)
-        item = discord.utils.get(guild.roles, id=item_id) if kind == "role" else guild.get_channel(item_id)
+        item = discord.utils.get(guild.roles, id=int(raw_id)) if kind == "role" else guild.get_channel(int(raw_id))
         if item:
             try:
                 await item.delete(reason="Undo by Rynnzyr")
@@ -459,23 +497,23 @@ async def ping(interaction: discord.Interaction):
 @app_commands.describe(prompt="Describe your community and the server you want")
 async def design(interaction: discord.Interaction, prompt: str):
     if interaction.guild is None:
-        await interaction.response.send_message("Use this command inside a server.", ephemeral=True)
+        await interaction.response.send_message("Use this inside a server.", ephemeral=True)
         return
     member = interaction.user
     if not isinstance(member, discord.Member) or not (member.guild_permissions.manage_guild or member.guild_permissions.administrator):
-        await interaction.response.send_message("You need Manage Server permission to use this command.", ephemeral=True)
+        await interaction.response.send_message("You need Manage Server permission.", ephemeral=True)
         return
     me = interaction.guild.me
     if me is None or not (me.guild_permissions.manage_channels and me.guild_permissions.manage_roles):
-        await interaction.response.send_message("I need Manage Channels and Manage Roles permissions.", ephemeral=True)
+        await interaction.response.send_message("I need Manage Channels and Manage Roles.", ephemeral=True)
         return
     await interaction.response.defer(ephemeral=True, thinking=True)
     try:
         plan = await generate_plan(interaction.guild, prompt[:1000])
-        await interaction.followup.send(embed=make_plan_embed(interaction.guild, plan), view=BlueprintView(interaction.guild, plan, interaction.user.id), ephemeral=True)
+        await interaction.followup.send(embed=make_embed(interaction.guild, plan), view=BlueprintView(interaction.guild, plan, interaction.user.id), ephemeral=True)
     except Exception as exc:
         print(f"/design failed: {type(exc).__name__}: {exc}")
-        message = str(exc) if "GROQ_API_KEY" in str(exc) else "I couldn't design that layout. Check Railway logs and AI API configuration."
+        message = str(exc) if "GROQ_API_KEY" in str(exc) else "I couldn't design that layout. Check Railway logs and AI configuration."
         await interaction.followup.send(message[:1800], ephemeral=True)
 
 
