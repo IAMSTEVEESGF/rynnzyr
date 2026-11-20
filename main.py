@@ -3,6 +3,7 @@ import json
 import os
 import re
 from contextlib import asynccontextmanager
+from difflib import SequenceMatcher
 
 import discord
 import httpx
@@ -22,8 +23,8 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 undo_snapshots: dict[int, list[str]] = {}
 
-# These seven categories and their channels are fixed, ordered foundations.
-# User-specific AI sections are added only after them; General ends at Suggestions.
+# Immutable reference foundation. General ends at Suggestions; prompt-specific
+# categories are separate and follow these seven sections.
 CORE_LAYOUT = [
     {"key": "staff", "name": "──── ⟪STAFF GENERAL⟫ ────", "private": True, "channels": [
         ("📚", "staff-rules", "text"), ("📣", "staff-announcements", "text"),
@@ -47,8 +48,6 @@ CORE_LAYOUT = [
         ("📊", "levels", "text"), ("🛠️", "suggestions", "text")]},
 ]
 
-# Topic-aware emoji choices. A channel gets one semantic icon; custom channel icons
-# are unique within each category where possible, rather than a repeated default.
 EMOJI_RULES = {
     "announcement": "📣", "announce": "📣", "rules": "📚", "leak": "📊", "poll": "🗳️",
     "boost": "🚀", "reward": "🎁", "scam": "⚠️", "application": "📝", "update": "🔄",
@@ -107,10 +106,9 @@ def clean_text(value, limit=100):
 
 
 def channel_key(value):
-    """Normalize emoji-decorated and plain channel names to one comparison key."""
+    """Normalize decorated/plain channel names for duplicate detection."""
     text = clean_text(value, 120).casefold()
     text = re.sub(r"^[〔【\[（(].*?[〕】\]）)]\s*[・•|:：-]*\s*", "", text)
-    # Remove emoji/symbol decoration, retaining letters and digits even across naming styles.
     return "".join(char for char in text if char.isalnum())
 
 
@@ -167,8 +165,7 @@ def core_category_match(name):
 
 def detect_archetype(prompt):
     text = prompt.casefold()
-    # Score all archetypes instead of first-match wins, so mixed prompts are handled sensibly.
-    scores = {name: sum(2 if keyword in text else 0 for keyword in spec["keywords"]) for name, spec in ARCHETYPES.items()}
+    scores = {name: sum(2 for keyword in spec["keywords"] if keyword in text) for name, spec in ARCHETYPES.items()}
     best = max(scores, key=scores.get)
     return best if scores[best] else "community"
 
@@ -302,8 +299,7 @@ def sanitize_plan(plan, archetype="community"):
             color = 0x5865F2
         roles.append({"name": name, "color": max(0, min(color, 0xFFFFFF)), "hoist": bool(item.get("hoist")), "mentionable": bool(item.get("mentionable"))})
 
-    categories = []
-    core_channel_keys = set()
+    categories, core_channel_keys = [], set()
     for core in CORE_LAYOUT:
         used = set()
         channels = []
@@ -312,11 +308,9 @@ def sanitize_plan(plan, archetype="community"):
             core_channel_keys.add(channel_key(name))
         categories.append({"name": core["name"], "staff_only": core["private"], "channels": channels})
 
-    # Never merge model output into core categories. Drop core-category lookalikes and
-    # any channel already represented in the fixed set (e.g. another sab-leaks).
-    seen_categories = set()
-    seen_channels = set(core_channel_keys)
-    extras = []
+    # Keep model-generated sections separate from the fixed foundations. Filter
+    # duplicates both within the plan and against the fixed channel names.
+    seen_categories, seen_channels, extras = set(), set(core_channel_keys), []
     raw_categories = plan.get("categories") if isinstance(plan.get("categories"), list) else []
     for item in raw_categories[:10]:
         if not isinstance(item, dict):
@@ -328,8 +322,7 @@ def sanitize_plan(plan, archetype="community"):
         if not key or key in seen_categories:
             continue
         seen_categories.add(key)
-        used_emojis = set()
-        channels = []
+        used_emojis, channels = set(), []
         raw_channels = item.get("channels") if isinstance(item.get("channels"), list) else []
         for channel in raw_channels[:12]:
             if not isinstance(channel, dict):
@@ -346,12 +339,10 @@ def sanitize_plan(plan, archetype="community"):
         if channels:
             extras.append({"name": name, "staff_only": False, "channels": channels})
 
-    # Fall back to curated, relevant extras if AI returned empty/duplicate-only data.
     if not extras:
         template = ARCHETYPES.get(archetype, ARCHETYPES["community"])
         for name, definitions in template["sections"]:
-            used = set()
-            channels = []
+            used, channels = set(), []
             for emoji, slug, kind in definitions:
                 normalized = channel_key(slug)
                 if normalized in seen_channels:
@@ -360,15 +351,12 @@ def sanitize_plan(plan, archetype="community"):
                 channels.append({"name": format_channel(slug, emoji, used), "type": kind, "topic": ""})
             if channels:
                 extras.append({"name": name, "staff_only": False, "channels": channels})
-
-    return {"summary": clean_text(plan.get("summary") or "A tailored, polished community layout", 500),
-            "roles": roles, "categories": categories + extras}
+    return {"summary": clean_text(plan.get("summary") or "A tailored, polished community layout", 500), "roles": roles, "categories": categories + extras}
 
 
 async def generate_plan(guild, prompt):
     archetype = detect_archetype(prompt)
     template = ARCHETYPES[archetype]
-    current = safe_state(guild)
     response = await ai_client().chat.completions.create(
         model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
         messages=[
@@ -380,7 +368,7 @@ Detected topic: {archetype}. Adapt these quality examples to the user's specific
 Use meaningful stylish category divider names, varied semantically fitting emoji per channel, and sensible text/voice types. Avoid using the same icon for multiple channels in a category. Include short topics only when helpful. Return channel name as plain slug; code adds the emoji frame. Do not make custom categories private. Suggest safe, useful roles only.
 Schema: {{"summary":"...","roles":[{{"name":"Role","color":"5865F2","hoist":false,"mentionable":false}}],"categories":[{{"name":"✨ : CUSTOM SECTION : 🌙","channels":[{{"name":"specific-channel","type":"text","topic":"..."}}]}}]}}
 Limits: 10 roles, 6 custom categories, 12 channels/category. Prefer fewer excellent, purposeful channels over filler.
-Current server to build on (avoid recreating channels): {json.dumps(current, ensure_ascii=False)}
+Current server to build on (avoid recreating channels): {json.dumps(safe_state(guild), ensure_ascii=False)}
 """},
             {"role": "user", "content": prompt}],
         temperature=0.65, max_tokens=5000, response_format={"type": "json_object"})
@@ -390,18 +378,30 @@ Current server to build on (avoid recreating channels): {json.dumps(current, ens
     return sanitize_plan(json.loads(content), archetype)
 
 
+def is_manageable_channel(channel):
+    # CategoryChannel is a GuildChannel too, but cannot be nested under categories.
+    return isinstance(channel, (discord.TextChannel, discord.VoiceChannel, discord.StageChannel, discord.ForumChannel, discord.NewsChannel))
+
+
 def find_category(guild, spec):
     desired_core = next((core for core in CORE_LAYOUT if core["name"] == spec["name"]), None)
     if desired_core:
         for category in guild.categories:
             if core_category_match(category.name) == desired_core["key"]:
                 return category
-    return discord.utils.get(guild.categories, name=spec["name"])
+    wanted = category_key(spec["name"])
+    for category in guild.categories:
+        if category_key(category.name) == wanted:
+            return category
+    # AI may vary decorative punctuation/emoji in a custom category title. Reuse a
+    # close title match instead of creating a second near-identical category.
+    candidates = [(SequenceMatcher(None, wanted, category_key(cat.name)).ratio(), cat) for cat in guild.categories]
+    return max(candidates, default=(0, None), key=lambda pair: pair[0])[1] if candidates and max(candidates, key=lambda pair: pair[0])[0] >= 0.88 else None
 
 
 def find_equivalent_channel(channels, desired_name):
     wanted = channel_key(desired_name)
-    return next((channel for channel in channels if channel_key(channel.name) == wanted), None)
+    return next((channel for channel in channels if is_manageable_channel(channel) and channel_key(channel.name) == wanted), None)
 
 
 async def apply_guild_plan(guild, plan):
@@ -415,6 +415,7 @@ async def apply_guild_plan(guild, plan):
             created_ids.append(f"role:{role.id}")
             created.append(f"Role: {role.name}")
         roles[role.name.casefold()] = role
+
     staff_role = next((role for name, role in roles.items() if "staff" in name or "moderator" in name or name == "mod"), None)
     staff_role = staff_role or discord.utils.get(guild.roles, name="Staff")
     if staff_role is None:
@@ -430,31 +431,33 @@ async def apply_guild_plan(guild, plan):
                           staff_role: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, connect=True, speak=True)}
         category = find_category(guild, spec)
         if category is None:
+            # Always create top-level categories: never supply a parent category.
             category = await guild.create_category(spec["name"], overwrites=overwrites, reason="Rynnzyr server blueprint")
             created_ids.append(f"category:{category.id}")
-            created.append(f"Category: {category.name}")
+            created.append(f"Category: {category.name}" + (" (staff-only)" if spec["staff_only"] else ""))
         else:
-            changes = {"name": spec["name"]} if category.name != spec["name"] else {}
+            changes = {}
+            if category.name != spec["name"]:
+                changes["name"] = spec["name"]
             if spec["staff_only"]:
                 changes["overwrites"] = overwrites
             if changes:
                 await category.edit(reason="Update canonical blueprint category", **changes)
         resolved.append((category, spec))
 
-    # Reorder blueprint categories as one block. Topic-specific sections remain after core.
-    for position, (category, _) in enumerate(resolved):
-        await category.edit(position=position, reason="Arrange categories in blueprint order")
+    # One bulk reorder is deterministic; per-category sequential position edits can
+    # shift neighboring categories and yield a different final order.
+    await guild.edit_channel_positions({category: index for index, (category, _) in enumerate(resolved)}, reason="Arrange categories in blueprint order")
 
     for category, spec in resolved:
-        for channel_spec in spec["channels"]:
-            # Compare normalized names, ignoring brackets, emoji, separators and case.
-            # This recognizes old/plain names such as sab-leaks and prevents duplicates.
+        for position, channel_spec in enumerate(spec["channels"]):
             channel = find_equivalent_channel(category.channels, channel_spec["name"])
             if channel is None:
-                # For fixed/public channels, reuse a matching channel elsewhere rather than
-                # create a second copy. Never pull a channel out of the private staff category.
+                # Reuse an existing ordinary channel anywhere in the guild. Categories
+                # are explicitly excluded so they can never become illegal subcategories.
                 channel = next((candidate for candidate in guild.channels
-                                if candidate.category != category
+                                if is_manageable_channel(candidate)
+                                and candidate.category != category
                                 and channel_key(candidate.name) == channel_key(channel_spec["name"])
                                 and not (candidate.category and core_category_match(candidate.category.name) == "staff")), None)
                 if channel is not None:
@@ -466,7 +469,11 @@ async def apply_guild_plan(guild, plan):
                     channel = await guild.create_text_channel(channel_spec["name"], category=category, topic=channel_spec["topic"] or None, reason="Rynnzyr server blueprint")
                 created_ids.append(f"channel:{channel.id}")
                 created.append(f"{channel_spec['type'].title()}: {channel_spec['name']}")
-            # If equivalent channel already existed, keep its existing name and topic; no duplicate.
+            else:
+                # Keep the existing channel and its messages; only ensure its intended
+                # category/order. Never rename it just because emoji decoration differs.
+                if channel.category != category or channel.position != position:
+                    await channel.edit(category=category, position=position, sync_permissions=spec["staff_only"], reason="Order existing blueprint channel")
             await asyncio.sleep(0.2)
 
     undo_snapshots[guild.id] = created_ids
