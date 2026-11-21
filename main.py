@@ -22,18 +22,18 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 undo_snapshots: dict[int, list[str]] = {}
 
-# Stable foundations requested by the owner. AI-generated categories follow these;
-# AI voice rooms are consolidated into a final voice category.
+# Stable category order. These channels are deliberately generic; the AI adds
+# prompt-specific channels after General and voice rooms in a final category.
 CORE = [
     ("staff", "──── ⟪STAFF GENERAL⟫ ────", True, [("📚", "staff-rules", "text"), ("📣", "staff-announcements", "text"), ("💬", "staff-chat", "text"), ("🎉", "staff-promotions", "text"), ("🗂️", "staff-logs", "text"), ("⚠️", "staff-demotions", "text"), ("🎙️", "staff-vc", "voice")]),
     ("welcome", "──── ⟪WELCOME⟫ ────", False, [("🛤️", "invite-tracker", "text"), ("👋", "welcome", "text"), ("🕊️", "goodbye", "text")]),
     ("verification", "──── ⟪VERIFICATION⟫ ────", False, [("✅", "verification", "text")]),
-    ("important", "──── ⟪IMPORTANT⟫ ────", False, [("📚", "rules", "text"), ("📣", "announcements", "text"), ("📊", "sab-leaks", "text"), ("🚀", "server-boosts", "text"), ("⚡", "boosters-rewards", "text"), ("📊", "polls", "text"), ("⚠️", "scammers", "text"), ("📝", "applications", "text"), ("🔄", "server-updates", "text"), ("🏅", "hall-of-fame", "text"), ("🎬", "content", "text"), ("🎟️", "support-ticket", "text")]),
+    ("important", "──── ⟪IMPORTANT⟫ ────", False, [("📚", "rules", "text"), ("📣", "announcements", "text"), ("ℹ️", "server-info", "text"), ("🔄", "server-updates", "text"), ("📝", "applications", "text"), ("🎟️", "support-ticket", "text")]),
     ("middleman", "──── ⟪MIDDLEMAN⟫ ────", False, [("💫", "verified-middleman", "text"), ("🎫", "middleman-ticket", "text"), ("✅", "middleman-vouches", "text")]),
-    ("giveaways", "──── ⟪GIVEAWAYS⟫ ────", False, [("🎉", "giveaways", "text"), ("🎰", "flash-giveaways", "text"), ("📸", "giveaways-vouches", "text"), ("🎮", "giveaways-vc", "voice")]),
+    ("giveaways", "──── ⟪GIVEAWAYS⟫ ────", False, [("🎉", "giveaways", "text"), ("🎰", "flash-giveaways", "text"), ("📸", "giveaways-vouches", "text")]),
     ("general", "──── ⟪GENERAL⟫ ────", False, [("💬", "general", "text"), ("📸", "media", "text"), ("⚙️", "commands", "text"), ("📊", "levels", "text"), ("🛠️", "suggestions", "text")]),
 ]
-EMOJI_RULES = {"announcement":"📣", "rules":"📚", "poll":"🗳️", "boost":"🚀", "reward":"🎁", "scam":"⚠️", "application":"📝", "update":"🔄", "hall":"🏅", "content":"🎬", "support":"🎟️", "ticket":"🎫", "middleman":"🤝", "verified":"✅", "vouch":"✅", "giveaway":"🎁", "invite":"🛤️", "welcome":"👋", "goodbye":"🕊️", "general":"💬", "chat":"🗨️", "media":"📸", "photo":"📷", "video":"🎥", "clip":"🎞️", "stream":"📡", "meme":"😂", "suggest":"🛠️", "feedback":"📝", "help":"🆘", "faq":"❓", "bug":"🐛", "staff":"🛡️", "log":"🗂️", "trade":"💱", "market":"🛒", "shop":"🏪", "sell":"🏷️", "buy":"💰", "auction":"🔨", "report":"🚨", "level":"📈", "leaderboard":"🏆", "command":"⚙️", "bot":"🤖", "voice":"🔊", "music":"🎵", "game":"🎮", "team":"👥", "match":"⚔️", "tournament":"🏆", "creator":"✨", "collab":"🤝", "event":"📅", "guide":"🧭", "idea":"💡"}
+EMOJI_RULES = {"announcement":"📣", "rule":"📚", "info":"ℹ️", "poll":"🗳️", "boost":"🚀", "reward":"🎁", "application":"📝", "update":"🔄", "hall":"🏅", "content":"🎬", "support":"🎟️", "ticket":"🎫", "middleman":"🤝", "verified":"✅", "vouch":"✅", "giveaway":"🎁", "invite":"🛤️", "welcome":"👋", "goodbye":"🕊️", "general":"💬", "chat":"🗨️", "media":"📸", "photo":"📷", "video":"🎥", "clip":"🎞️", "stream":"📡", "meme":"😂", "suggest":"🛠️", "feedback":"📝", "help":"🆘", "faq":"❓", "bug":"🐛", "staff":"🛡️", "log":"🗂️", "trade":"💱", "market":"🛒", "shop":"🏪", "sell":"🏷️", "buy":"💰", "auction":"🔨", "report":"🚨", "level":"📈", "leaderboard":"🏆", "command":"⚙️", "bot":"🤖", "voice":"🔊", "music":"🎵", "game":"🎮", "team":"👥", "match":"⚔️", "tournament":"🏆", "creator":"✨", "collab":"🤝", "event":"📅", "guide":"🧭", "idea":"💡"}
 FALLBACK_EMOJIS = ["🌟", "🧩", "🪄", "🧿", "🌈", "🪐", "🦋", "🍀", "🔥", "💎", "🧸", "🪷", "🌙", "🎨", "🪙", "🧠", "🪁", "💫", "🔮", "🧵", "🎪", "🪸", "🪻", "🧃", "🧊", "🧪", "🧭"]
 
 
@@ -175,45 +175,37 @@ def get_guild(guild_id):
 
 
 def safe_state(guild):
-    return {
-        "name": guild.name,
-        "categories": [
-            {"name": category.name, "channels": [channel.name for channel in category.channels]}
-            for category in guild.categories[:30]
-        ],
-    }
+    return {"name": guild.name, "categories": [{"name": category.name, "channels": [channel.name for channel in category.channels]} for category in guild.categories[:30]]}
 
 
 def core_plan():
-    categories = []
+    result = []
     for _, name, staff_only, definitions in CORE:
-        channels = [{"name": f"〔{emoji}〕・{channel_name}", "type": kind, "topic": ""}
-                    for emoji, channel_name, kind in definitions]
-        categories.append({"name": name, "staff_only": staff_only, "channels": channels})
-    return categories
+        channels = [{"name": f"〔{emoji}〕・{channel_name}", "type": kind, "topic": ""} for emoji, channel_name, kind in definitions]
+        result.append({"name": name, "staff_only": staff_only, "channels": channels})
+    return result
 
 
 def sanitize_plan(raw_plan, prompt):
-    """Keep the AI's prompt-specific design, while enforcing safe names, order and uniqueness."""
+    """Keep prompt-specific AI design; enforce safe names, core order and uniqueness."""
     if not isinstance(raw_plan, dict):
         raw_plan = {}
     roles = []
     for item in (raw_plan.get("roles") if isinstance(raw_plan.get("roles"), list) else [])[:8]:
         if not isinstance(item, dict):
             continue
-        name = clean_text(item.get("name"), 80)
-        if not name or name.casefold() in {"everyone", "here", "admin", "administrator", "owner", "bot"}:
+        role_name = clean_text(item.get("name"), 80)
+        if not role_name or role_name.casefold() in {"everyone", "here", "admin", "administrator", "owner", "bot"}:
             continue
         try:
             color = int(str(item.get("color", "5865F2")).lstrip("#"), 16)
         except (ValueError, TypeError):
             color = 0x5865F2
-        roles.append({"name": name, "color": max(0, min(color, 0xFFFFFF)),
-                      "hoist": bool(item.get("hoist")), "mentionable": bool(item.get("mentionable"))})
+        roles.append({"name": role_name, "color": max(0, min(color, 0xFFFFFF)), "hoist": bool(item.get("hoist")), "mentionable": bool(item.get("mentionable"))})
 
     categories = core_plan()
-    seen_category_names = {name_key(item["name"]) for item in categories}
-    seen_channel_names = {name_key(channel["name"]) for item in categories for channel in item["channels"]}
+    seen_categories = {name_key(item["name"]) for item in categories}
+    seen_channels = {name_key(channel["name"]) for item in categories for channel in item["channels"]}
     raw_categories = raw_plan.get("categories") if isinstance(raw_plan.get("categories"), list) else []
     voice = []
     for item in raw_categories[:8]:
@@ -221,12 +213,9 @@ def sanitize_plan(raw_plan, prompt):
             continue
         category_name = clean_text(item.get("name"), 90)
         category_key = name_key(category_name)
-        # AI cannot create a duplicate or reorder/replace a fixed foundation.
-        if not category_key or category_key in seen_category_names:
+        if not category_key or category_key in seen_categories:
             continue
-        if any(category_key == name_key(core_name) for _, core_name, _, _ in CORE):
-            continue
-        seen_category_names.add(category_key)
+        seen_categories.add(category_key)
         text_channels = []
         channel_specs = item.get("channels") if isinstance(item.get("channels"), list) else []
         for channel in channel_specs[:12]:
@@ -234,9 +223,9 @@ def sanitize_plan(raw_plan, prompt):
                 continue
             channel_slug = slug(channel.get("name"))
             channel_key = name_key(channel_slug)
-            if not channel_key or channel_key in seen_channel_names:
+            if not channel_key or channel_key in seen_channels:
                 continue
-            seen_channel_names.add(channel_key)
+            seen_channels.add(channel_key)
             kind = "voice" if str(channel.get("type", "text")).casefold() == "voice" else "text"
             topic = clean_text(channel.get("topic"), 900) if kind == "text" else ""
             icon = choose_emoji(channel_slug, set())
@@ -248,32 +237,25 @@ def sanitize_plan(raw_plan, prompt):
         if text_channels:
             categories.append({"name": category_name, "staff_only": False, "channels": text_channels})
 
-    # Always provide a general voice room; AI-specified voice rooms go in this final section.
-    if not any("communityvoice" == name_key(item["name"]) for item in voice):
+    if not any(name_key(item["name"]) == "communityvoice" for item in voice):
         voice.insert(0, {"name": "〔🎙️〕・community-voice", "type": "voice", "topic": ""})
     categories.append({"name": "🎙️ : VOICE LOUNGE : 🎧", "staff_only": False, "channels": voice})
-    summary = clean_text(raw_plan.get("summary") or f"AI-designed layout for: {prompt}", 450)
-    return {"summary": summary, "roles": roles, "categories": categories}
+    return {"summary": clean_text(raw_plan.get("summary") or f"AI-designed layout for: {prompt}", 450), "roles": roles, "categories": categories}
 
 
 async def generate_plan(guild, prompt):
-    """Use the configured LLM to design for any subject from the user's actual prompt."""
-    server_state = safe_state(guild)
+    """Ask the configured language model to design for the user's actual subject."""
     system_message = f"""
-You are the built-in AI Discord server architect. Carefully read and follow the user's ENTIRE prompt.
-Design for ANY requested subject: games, creators, businesses, schools, clubs, fan communities, support servers, or something else. Do not assume a platform or topic that the user did not state. In particular, never inject Roblox, Minecraft, or any named game unless the user asked for it. Never add unrelated game-specific channels.
-Return only a valid JSON object with keys summary, roles, categories. The app itself creates fixed ordered foundations: STAFF GENERAL (private), WELCOME, VERIFICATION, IMPORTANT, MIDDLEMAN, GIVEAWAYS, GENERAL (ends at Suggestions). Do not return or duplicate those. Then return only useful prompt-specific categories in the order that makes sense. Put text channels in those categories; any voice channels you request will be moved to one final VOICE LOUNGE category by the app. Do not create a category called Voice Lounge yourself.
-Use concise, tasteful category titles and channel slugs, relevant emojis, and helpful short text-channel topics. Avoid filler, redundant purposes, and duplicate names. Roles should be ordinary community roles only; never grant permissions or suggest administrator/owner roles. Don't duplicate the current server's existing channels: {json.dumps(server_state, ensure_ascii=False)}
-Schema example only (do not copy unless it fits the prompt): {{"summary":"A tailored server layout","roles":[{{"name":"Member","color":"5865F2","hoist":false,"mentionable":false}}],"categories":[{{"name":"✨ : YOUR COMMUNITY : ✨","channels":[{{"name":"topic-chat","type":"text","topic":"A short useful description"}},{{"name":"hangout-voice","type":"voice"}}]}}]}}
-Limits: max 8 roles, 8 custom categories, 12 channels per category. Be specific to the exact user request.
+You are the built-in AI Discord server architect. Carefully interpret the user's ENTIRE prompt and design a useful server for exactly that subject. This must work for arbitrary games, hobbies, brands, businesses, schools, clubs, creator groups, support communities, and other user-defined topics. Never assume a topic or game the user did not request; do not inject Roblox, Minecraft, GTA, or other unrelated subjects. For a GTA 6 prompt, for example, propose GTA 6 community topics, not unrelated generic filler such as leaks, scams, or Roblox channels.
+Return only JSON with summary, roles, categories. The app already creates fixed ordered foundations: STAFF GENERAL (private), WELCOME, VERIFICATION, IMPORTANT, MIDDLEMAN, GIVEAWAYS, GENERAL (ends at Suggestions). Do not duplicate those categories or their channels. IMPORTANT channels are generic rules, announcements, server-info, server-updates, applications, and support-ticket; do not add game-specific or unrelated channels there. Then create up to 8 prompt-specific categories in a sensible order. Include category/channel names and short useful topics. Voice channels you return are consolidated into a final Voice Lounge; do not create that category yourself.
+Use meaningful concise names, no filler or duplicate channels. Suggest ordinary roles only; never suggest administrator/owner roles or permissions. Current server state for context: {json.dumps(safe_state(guild), ensure_ascii=False)}
+Schema: {{"summary":"Specific summary reflecting the user prompt","roles":[{{"name":"Member","color":"5865F2","hoist":false,"mentionable":false}}],"categories":[{{"name":"🎮 : SUBJECT-SPECIFIC SECTION : 🎮","channels":[{{"name":"subject-chat","type":"text","topic":"Useful short description"}},{{"name":"subject-voice","type":"voice"}}]}}]}}
+Limits: 8 roles, 8 custom categories, 12 channels/category. Follow the user's exact topic and avoid generic categories that do not fit.
 """
     response = await ai_client().chat.completions.create(
         model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
         messages=[{"role": "system", "content": system_message}, {"role": "user", "content": prompt}],
-        temperature=0.25,
-        max_tokens=4500,
-        response_format={"type": "json_object"},
-    )
+        temperature=0.2, max_tokens=4500, response_format={"type": "json_object"})
     content = response.choices[0].message.content
     if not content:
         raise RuntimeError("AI returned an empty design")
@@ -293,7 +275,6 @@ def is_regular_channel(channel):
 
 
 async def delete_existing_layout(guild):
-    # Destructive reset is only called after the manager presses the explicit confirm button.
     for channel in list(guild.channels):
         if is_regular_channel(channel):
             await channel.delete(reason="User-confirmed Rynnzyr rebuild")
@@ -319,13 +300,10 @@ async def build_fresh_layout(guild, plan):
         roles[role.name.casefold()] = role
     staff_role = roles.get("staff") or discord.utils.get(guild.roles, name="Staff")
 
-    # Categories are created top-level, sequentially: this preserves intended order and
-    # avoids illegal category nesting or unsupported bulk-position APIs.
     for spec in plan["categories"]:
         overwrites = {}
         if spec.get("staff_only"):
-            overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                          staff_role: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, connect=True, speak=True)}
+            overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False), staff_role: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, connect=True, speak=True)}
         category = await guild.create_category(spec["name"], overwrites=overwrites, reason="Fresh Rynnzyr layout")
         created_ids.append(f"category:{category.id}")
         created.append(f"Category: {category.name}" + (" (staff-only)" if spec.get("staff_only") else ""))
