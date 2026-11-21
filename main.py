@@ -31,8 +31,8 @@ CORE = [
     ("giveaways", "──── ⟪GIVEAWAYS⟫ ────", False, [("🎉", "giveaways", "text"), ("🎰", "flash-giveaways", "text"), ("📸", "giveaways-vouches", "text"), ("🎮", "giveaways-vc", "voice")]),
     ("general", "──── ⟪GENERAL⟫ ────", False, [("💬", "general", "text"), ("📸", "media", "text"), ("⚙️", "commands", "text"), ("📊", "levels", "text"), ("🛠️", "suggestions", "text")]),
 ]
-EMOJI_RULES = {"announcement":"📣","rules":"📚","leak":"📊","poll":"🗳️","boost":"🚀","reward":"🎁","scam":"⚠️","application":"📝","update":"🔄","hall":"🏅","content":"🎬","support":"🎟️","ticket":"🎫","middleman":"🤝","verified":"✅","vouch":"✅","giveaway":"🎁","invite":"🛤️","welcome":"👋","goodbye":"🕊️","general":"💬","chat":"🗨️","media":"📸","photo":"📷","video":"🎥","clip":"🎞️","stream":"📡","meme":"😂","suggest":"🛠️","feedback":"📝","help":"🆘","faq":"❓","bug":"🐛","staff":"🛡️","log":"🗂️","trade":"💱","market":"🛒","shop":"🏪","sell":"🏷️","buy":"💰","auction":"🔨","report":"🚨","level":"📈","leaderboard":"🏆","command":"⚙️","bot":"🤖","voice":"🔊","music":"🎵","game":"🎮","roblox":"🧱","squad":"🪖","team":"👥","match":"⚔️","tournament":"🏆","fan":"💖","art":"🎨","creator":"✨","collab":"🤝","event":"📅","guide":"🧭","idea":"💡"}
-FALLBACK_EMOJIS = ["🌟","🧩","🪄","🧿","🌈","🪐","🦋","🍀","🔥","💎","🧸","🪷","🌙","🎨","🪙","🧠","🪁","💫","🔮","🧵","🎪","🪸","🪻","🧃","🧊","🧪","🧭"]
+EMOJI_RULES = {"announcement":"📣","rule":"📚","poll":"🗳️","boost":"🚀","reward":"🎁","scam":"⚠️","application":"📝","update":"🔄","hall":"🏅","content":"🎬","support":"🎟️","ticket":"🎫","middleman":"🤝","verified":"✅","vouch":"✅","giveaway":"🎁","invite":"🛤️","welcome":"👋","goodbye":"🕊️","general":"💬","chat":"🗨️","media":"📸","photo":"📷","video":"🎥","clip":"🎞️","stream":"📡","meme":"😂","suggest":"🛠️","feedback":"📝","help":"🆘","faq":"❓","bug":"🐛","staff":"🛡️","log":"🗂️","trade":"💱","market":"🛒","shop":"🏪","sell":"🏷️","buy":"💰","auction":"🔨","report":"🚨","level":"📈","leaderboard":"🏆","command":"⚙️","bot":"🤖","voice":"🔊","music":"🎵","game":"🎮","roblox":"🧱","minecraft":"⛏️","squad":"🪖","team":"👥","match":"⚔️","tournament":"🏆","fan":"💖","art":"🎨","creator":"✨","collab":"🤝","event":"📅","guide":"🧭","idea":"💡"}
+FALLBACK_EMOJIS = ["🌟","🧩","🪄","🧿","🌈","🪐","🦋","🍀","🔥","💎","🧸","🪷","🌙","🎨","🪙","🧠","🪁","����","🔮","🧵","🎪","🪸","🪻","🧃","🧊","🧪","🧭"]
 
 
 def clean_text(value, limit=100):
@@ -69,16 +69,21 @@ def icon_for(name, used):
 
 
 def detect_prompt(prompt):
+    """Classify explicit subjects; never infer Roblox from unrelated game prompts."""
     text = prompt.casefold()
-    roblox = "roblox" in text
-    brainrot = "steal a brainrot" in text or "brainrot" in text
+    minecraft = bool(re.search(r"\bminecraft\b|\bminecraft\s+(?:smp|server|community)\b", text))
+    roblox = bool(re.search(r"\broblox\b", text))
+    brainrot = "steal a brainrot" in text or re.search(r"\bbrainrot\b", text) is not None
     trade = any(word in text for word in ("trade", "trading", "market", "middleman", "sell", "buy", "auction", "robux", "item exchange"))
-    content = any(word in text for word in ("content", "clips", "videos", "media", "stream", "youtube", "tiktok")) or roblox
-    creators = any(word in text for word in ("creator", "creators", "artist", "art", "streamer", "influencer", "youtuber")) or roblox
-    return {"roblox": roblox, "brainrot": brainrot, "trade": trade or roblox, "content": content, "creators": creators}
+    # Roblox-wide trading is relevant only when user asks about trading/Robux; don't assume it.
+    content = any(word in text for word in ("content", "clips", "videos", "media", "stream", "youtube", "tiktok"))
+    creators = any(word in text for word in ("creator", "creators", "artist", "art", "streamer", "influencer", "youtuber"))
+    subject = "minecraft" if minecraft and not roblox else "roblox" if roblox and not minecraft else "mixed" if minecraft and roblox else "community"
+    return {"subject": subject, "minecraft": minecraft, "roblox": roblox, "brainrot": brainrot,
+            "trade": trade, "content": content, "creators": creators}
 
 
-def get_ai_client():
+def ai_client():
     token = os.getenv("GROQ_API_KEY")
     if not token:
         raise RuntimeError("GROQ_API_KEY is not configured in Railway Variables")
@@ -183,13 +188,7 @@ def get_guild(guild_id):
 
 
 def safe_state(guild):
-    return {
-        "name": guild.name,
-        "categories": [
-            {"name": category.name, "channels": [channel.name for channel in category.channels]}
-            for category in guild.categories[:30]
-        ],
-    }
+    return {"name": guild.name, "categories": [{"name": category.name, "channels": [channel.name for channel in category.channels]} for category in guild.categories[:30]]}
 
 
 def add_category(categories, name, definitions, *, staff_only=False):
@@ -202,6 +201,74 @@ def add_category(categories, name, definitions, *, staff_only=False):
                          "topic": clean_text(topic, 1024) if kind == "text" else ""})
     if channels:
         categories.append({"name": name, "staff_only": staff_only, "channels": channels})
+
+
+def build_platform_sections(prompt, existing_keys):
+    """Curated subject-specific layout ensures the AI cannot substitute another game."""
+    context = detect_prompt(prompt)
+    categories = []
+    if context["minecraft"]:
+        add_category(categories, "⛏️ : MINECRAFT COMMUNITY : 🌿", [
+            ("🌱", "minecraft-chat", "text", "Talk about Minecraft and the community."),
+            ("🧭", "server-info-and-ip", "text", "Read server details, edition, version and connection guidance."),
+            ("🪓", "survival-and-smp", "text", "Discuss survival worlds, SMP builds and progression."),
+            ("🏗️", "build-showcase", "text", "Show builds and get constructive feedback."),
+            ("🔴", "redstone-and-farms", "text", "Share redstone contraptions, farms and technical builds."),
+            ("🧰", "mods-and-resource-packs", "text", "Discuss compatible mods, datapacks and resource packs."),
+            ("🗺️", "looking-for-group", "text", "Find people to play with."),
+        ])
+        if any(word in prompt.casefold() for word in ("modded", "mods", "modpack")):
+            add_category(categories, "🧪 : MODDED MINECRAFT : ⚙️", [
+                ("🧪", "modpack-help", "text", "Get help with the modpack."),
+                ("📦", "mod-recommendations", "text", "Recommend compatible mods."),
+            ])
+    elif context["roblox"]:
+        add_category(categories, "🧱 : ROBLOX COMMUNITY : 🎮", [
+            ("🧱", "roblox-chat", "text", "General Roblox community chat."),
+            ("🎮", "game-recommendations", "text", "Recommend Roblox experiences; avoid assuming a specific game."),
+            ("📸", "roblox-screenshots", "text", "Share Roblox screenshots and moments."),
+            ("🧑‍💻", "development-and-studio", "text", "Discuss Roblox Studio, scripting and game development."),
+            ("🔎", "looking-for-players", "text", "Find Roblox players and groups."),
+        ])
+        if context["brainrot"]:
+            add_category(categories, "🧠 : STEAL A BRAINROT : 🧠", [
+                ("🧠", "brainrot-chat", "text", "Talk about Steal a Brainrot."),
+                ("💰", "brainrot-trading", "text", "Discuss game trades and value safely."),
+                ("📸", "brainrot-moments", "text", "Share game clips and screenshots."),
+            ])
+    elif context["subject"] == "mixed":
+        add_category(categories, "🎮 : GAME COMMUNITIES : 🕹️", [
+            ("💬", "game-chat", "text", "Discuss the games named in this community's prompt."),
+            ("🔎", "looking-for-players", "text", "Find players and groups."),
+        ])
+    else:
+        # For non-Minecraft and non-Roblox prompts use only model-designed relevance.
+        pass
+
+    # Add requested content/creator/trading sections for any game or community.
+    if context["content"]:
+        prefix = context["subject"] if context["subject"] in {"minecraft", "roblox"} else "community"
+        add_category(categories, "🎬 : CONTENT : ✨", [
+            ("🎬", f"{prefix}-content-drops", "text", "Share relevant clips, announcements and creations."),
+            ("🎞️", f"{prefix}-clips", "text", "Post highlights and clips."),
+            ("📸", f"{prefix}-screenshots", "text", "Share screenshots and images."),
+        ])
+    if context["creators"]:
+        prefix = context["subject"] if context["subject"] in {"minecraft", "roblox"} else "community"
+        add_category(categories, "✨ : CREATORS ONLY : 🌙", [
+            ("✨", f"{prefix}-creator-showcase", "text", "Showcase original work and projects."),
+            ("🤝", "collab-requests", "text", "Find collaborators."),
+            ("📣", "creator-updates", "text", "Share creator updates and releases."),
+        ])
+    if context["trade"]:
+        prefix = context["subject"] if context["subject"] in {"minecraft", "roblox"} else "community"
+        add_category(categories, "💱 : TRADING : 🛒", [
+            ("💱", f"{prefix}-trade-chat", "text", "Discuss trades relevant to the requested community."),
+            ("🛒", f"{prefix}-trade-offers", "text", "Post offers and requests."),
+            ("✅", "trade-vouches", "text", "Share completed-trade feedback."),
+            ("🛡️", "trade-safety", "text", "Read trade-safety guidance and report suspicious activity."),
+        ])
+    return [category for category in categories if any(key(ch["name"]) not in existing_keys for ch in category["channels"])]
 
 
 def sanitize_plan(plan, prompt):
@@ -229,127 +296,99 @@ def sanitize_plan(plan, prompt):
             used_channels.add(key(channel_name))
         categories.append({"name": name, "staff_only": private, "channels": entries})
 
-    custom = []
-    if context["content"]:
-        prefix = "roblox" if context["roblox"] else ""
-        definitions = [("🎬", f"{prefix}-content-drops" if prefix else "content-drops", "text", "Share community updates, clips, and creations."),
-                       ("🎞️", f"{prefix}-clips" if prefix else "clips", "text", "Post short clips and highlights."),
-                       ("📸", f"{prefix}-screenshots" if prefix else "screenshots", "text", "Share screenshots and images.")]
-        add_category(custom, "🎬 : CONTENT : ✨", definitions)
-    if context["creators"]:
-        prefix = "roblox" if context["roblox"] else ""
-        definitions = [("✨", f"{prefix}-creator-showcase" if prefix else "creator-showcase", "text", "Showcase original work and projects."),
-                       ("🤝", "collab-requests", "text", "Find people for creative collaborations."),
-                       ("📣", "creator-updates", "text", "Share creator news and releases.")]
-        add_category(custom, "✨ : CREATORS ONLY : 🌙", definitions)
-    if context["trade"]:
-        prefix = "roblox" if context["roblox"] else "community"
-        definitions = [("💱", f"{prefix}-trade-chat", "text", "Discuss fair trades; follow game/platform rules."),
-                       ("🛒", f"{prefix}-trade-offers", "text", "Post clear offers and requests."),
-                       ("✅", "trade-vouches", "text", "Share completed-trade feedback."),
-                       ("🛡️", "trade-safety", "text", "Read safety guidance and report suspicious trades.")]
-        add_category(custom, "💱 : TRADING : 🛒", definitions)
+    # Deterministic game/community sections lead. Model-generated additions follow.
+    curated = build_platform_sections(prompt, used_channels)
+    for category in curated:
+        filtered = [channel for channel in category["channels"] if key(channel["name"]) not in used_channels]
+        if filtered:
+            category["channels"] = filtered
+            used_channels.update(key(channel["name"]) for channel in filtered)
+            categories.append(category)
 
-    extras, used_categories = [], set()
     raw_categories = plan.get("categories") if isinstance(plan.get("categories"), list) else []
-    for category in raw_categories[:6]:
+    custom, used_categories = [], set()
+    forbidden_terms = set()
+    if context["minecraft"] and not context["roblox"]:
+        forbidden_terms.update(("roblox", "brainrot", "adoptme", "bloxfruits"))
+    elif context["roblox"] and not context["minecraft"]:
+        forbidden_terms.add("minecraft")
+        if not context["brainrot"]:
+            forbidden_terms.update(("brainrot", "stealabrainrot"))
+
+    for category in raw_categories[:4]:
         if not isinstance(category, dict):
             continue
         title = clean_text(category.get("name"), 100)
         title_key = key(title)
         if not title or any(core_name in title_key for core_name in ("staffgeneral", "welcome", "verification", "important", "middleman", "giveaways", "general")):
             continue
-        if title_key in used_categories or any(title_key in key(existing["name"]) or key(existing["name"]) in title_key for existing in custom):
+        if title_key in used_categories or any(title_key in key(existing["name"]) or key(existing["name"]) in title_key for existing in categories):
             continue
-        if "brainrot" in title.casefold() and not context["brainrot"]:
+        if any(term in title_key for term in forbidden_terms):
             continue
         used_categories.add(title_key)
-        used_icons, text_entries = set(), []
-        channels = category.get("channels") if isinstance(category.get("channels"), list) else []
-        for channel in channels[:10]:
-            if not isinstance(channel, dict):
+        icons, text_channels = set(), []
+        raw_channels = category.get("channels") if isinstance(category.get("channels"), list) else []
+        for channel in raw_channels[:8]:
+            if not isinstance(channel, dict) or channel.get("type") == "voice":
                 continue
             channel_slug = slug(channel.get("name"))
-            if "brainrot" in channel_slug and not context["brainrot"]:
+            channel_key = key(channel_slug)
+            if not channel_key or channel_key in used_channels or any(term in channel_key for term in forbidden_terms):
                 continue
-            normalized = key(channel_slug)
-            if not normalized or normalized in used_channels:
-                continue
-            used_channels.add(normalized)
-            kind = "voice" if channel.get("type") == "voice" else "text"
-            if kind == "voice":
-                continue  # all voice chats are consolidated into the final category
-            icon = icon_for(channel_slug, used_icons)
-            text_entries.append({"name": f"〔{icon}〕・{channel_slug}", "type": "text", "topic": clean_text(channel.get("topic"), 1024)})
-        if text_entries:
-            extras.append({"name": title, "staff_only": False, "channels": text_entries})
-
+            used_channels.add(channel_key)
+            icon = icon_for(channel_slug, icons)
+            text_channels.append({"name": f"〔{icon}〕・{channel_slug}", "type": "text", "topic": clean_text(channel.get("topic"), 1024)})
+        if text_channels:
+            custom.append({"name": title, "staff_only": False, "channels": text_channels})
     categories.extend(custom)
-    categories.extend(extras)
-    if context["roblox"]:
-        voice_defaults = [("🎮", "roblox-game-voice"), ("🗣️", "community-voice"), ("🎙️", "creator-voice")]
+
+    # Always make voice channels, and always place their category last.
+    if context["minecraft"] and not context["roblox"]:
+        defaults = [("⛏️", "minecraft-voice"), ("🧭", "survival-squad"), ("🎙️", "community-voice")]
+    elif context["roblox"]:
+        defaults = [("🧱", "roblox-game-voice"), ("🎮", "party-voice"), ("🎙️", "community-voice")]
     else:
-        voice_defaults = [("🎙️", "community-voice"), ("🎮", "gaming-voice"), ("🎵", "music-voice")]
-    voice_channels, voice_seen = [], set()
-    for icon, name in voice_defaults:
-        voice_seen.add(key(name))
-        voice_channels.append({"name": f"〔{icon}〕・{name}", "type": "voice", "topic": ""})
+        defaults = [("🎙️", "community-voice"), ("🎮", "gaming-voice"), ("🎵", "music-voice")]
+    voice_channels, voice_keys = [], set()
+    for icon, name in defaults:
+        if key(name) not in voice_keys:
+            voice_keys.add(key(name))
+            voice_channels.append({"name": f"〔{icon}〕・{name}", "type": "voice", "topic": ""})
     for category in raw_categories:
-        if not isinstance(category, dict):
+        if not isinstance(category, dict) or not isinstance(category.get("channels"), list):
             continue
-        raw_voice = category.get("channels") if isinstance(category.get("channels"), list) else []
-        for channel in raw_voice:
+        for channel in category["channels"]:
             if not isinstance(channel, dict) or channel.get("type") != "voice":
                 continue
             channel_slug = slug(channel.get("name"))
-            if "brainrot" in channel_slug and not context["brainrot"]:
-                continue
             channel_key = key(channel_slug)
-            if channel_key and channel_key not in voice_seen:
-                voice_seen.add(channel_key)
-                icon = icon_for(channel_slug, set())
-                voice_channels.append({"name": f"〔{icon}〕・{channel_slug}", "type": "voice", "topic": ""})
+            if not channel_key or channel_key in voice_keys or any(term in channel_key for term in forbidden_terms):
+                continue
+            voice_keys.add(channel_key)
+            icon = icon_for(channel_slug, set())
+            voice_channels.append({"name": f"〔{icon}〕・{channel_slug}", "type": "voice", "topic": ""})
     categories.append({"name": "🎙️ : VOICE LOUNGE : 🎧", "staff_only": False, "channels": voice_channels})
     return {"summary": clean_text(plan.get("summary") or "A tailored community server blueprint", 500), "roles": roles, "categories": categories}
 
 
 async def generate_plan(guild, prompt):
     context = detect_prompt(prompt)
-    response = await get_ai_client().chat.completions.create(
+    response = await ai_client().chat.completions.create(
         model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
         messages=[{"role": "system", "content": f"""
-You are a careful Discord community architect. Return JSON only with summary, roles, categories.
-The app always creates fixed sections in order: STAFF GENERAL (private), WELCOME, VERIFICATION, IMPORTANT, MIDDLEMAN, GIVEAWAYS, GENERAL (ends at suggestions). It then adds prompt-relevant CONTENT, CREATORS ONLY, TRADING, optional custom categories, then the final VOICE LOUNGE. Do not output those sections. Create at most 3 additional prompt-specific text-only categories.
-Prompt context: {json.dumps(context)}. Roblox means the platform generally: never invent a specific Roblox game such as Steal a Brainrot unless the prompt explicitly names it. Be precise to the user's prompt, avoid filler and unrelated games. Do not duplicate existing channels: {json.dumps(safe_state(guild), ensure_ascii=False)}.
-Schema: {{"summary":"...","roles":[{{"name":"Member","color":"5865F2"}}],"categories":[{{"name":"🎮 : ROBLOX HANGOUT : 🎮","channels":[{{"name":"game-chat","type":"text","topic":"..."}}]}}]}}
-No voice channels; code ensures a final voice lounge. Do not create any permissions/admin roles.
+You are an expert Discord community architect. Return only JSON containing summary, roles, and categories.
+CRITICAL: First identify the exact requested subject, then create channels only for that subject. Current detected context: {json.dumps(context)}. The user's prompt is authoritative. If Minecraft is requested, produce Minecraft-only custom ideas; NEVER mention Roblox, Steal a Brainrot, or any unrelated game. If Roblox is requested, Roblox means the platform broadly; do not assume any specific Roblox experience unless the user names it. Never add Steal a Brainrot unless the user explicitly asks for Brainrot. Do not mix communities or invent an unrelated game.
+The code creates core order: STAFF GENERAL, WELCOME, VERIFICATION, IMPORTANT, MIDDLEMAN, GIVEAWAYS, GENERAL (ends at suggestions). It then adds tailored community sections and always places a voice-chat category last. Do not return or duplicate those fixed sections. Return up to 3 extra TEXT-only categories, specific to the prompt, with concise names and useful channel topics. Avoid generic filler and duplicates.
+Existing server layout: {json.dumps(safe_state(guild), ensure_ascii=False)}
+JSON schema: {{"summary":"Specific one-sentence blueprint summary","roles":[{{"name":"Member","color":"5865F2","hoist":false,"mentionable":false}}],"categories":[{{"name":"⛏️ : MINECRAFT SMP : 🌿","channels":[{{"name":"survival-chat","type":"text","topic":"Chat about survival"}}]}}]}}
+No voice channels in model output. Never propose administrator permissions or roles. Limit 8 roles, 3 custom categories, 8 channels/category.
 """}, {"role": "user", "content": prompt}],
-        temperature=0.3, max_tokens=3000, response_format={"type": "json_object"})
+        temperature=0.2, max_tokens=3000, response_format={"type": "json_object"})
     content = response.choices[0].message.content
     if not content:
         raise RuntimeError("AI returned an empty design")
     return sanitize_plan(json.loads(content), prompt)
-
-
-async def lifespan(app):
-    token = os.getenv("DISCORD_TOKEN")
-    if token:
-        asyncio.create_task(bot.start(token))
-    else:
-        print("DISCORD_TOKEN is missing")
-    yield
-    if not bot.is_closed():
-        await bot.close()
-
-
-@app.post("/api/plan")
-async def create_plan(req: PlanRequest):
-    try:
-        return {"plan": await generate_plan(get_guild(req.guild_id), req.prompt)}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(502, f"AI planning failed: {exc}")
 
 
 def is_category(channel):
@@ -386,12 +425,10 @@ async def build_fresh_layout(guild, plan):
         roles[role.name.casefold()] = role
     staff_role = roles.get("staff") or discord.utils.get(guild.roles, name="Staff")
 
-    # Create top-level categories sequentially; no category is ever a category's parent.
     for spec in plan["categories"]:
         overwrites = {}
         if spec.get("staff_only"):
-            overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                          staff_role: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, connect=True, speak=True)}
+            overwrites = {guild.default_role: discord.PermissionOverwrite(view_channel=False), staff_role: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, connect=True, speak=True)}
         category = await guild.create_category(spec["name"], overwrites=overwrites, reason="Fresh Rynnzyr layout")
         created_ids.append(f"category:{category.id}")
         created.append(f"Category: {category.name}" + (" (staff-only)" if spec.get("staff_only") else ""))
@@ -456,6 +493,16 @@ class RebuildView(discord.ui.View):
         await interaction.response.edit_message(content="Rebuild cancelled. No server changes were made.", embed=None, view=self)
 
 
+@app.post("/api/plan")
+async def create_plan(req: PlanRequest):
+    try:
+        return {"plan": await generate_plan(get_guild(req.guild_id), req.prompt)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"AI planning failed: {exc}")
+
+
 @app.post("/api/apply")
 async def apply_plan(req: ApplyRequest):
     raise HTTPException(409, "Destructive rebuild is only available after explicit confirmation in the Discord preview.")
@@ -485,7 +532,7 @@ async def ping(interaction: discord.Interaction):
 
 
 @bot.tree.command(name="design", description="Preview and rebuild your community server")
-@app_commands.describe(prompt="Describe your community; e.g. Roblox, creator, trading, or gaming server")
+@app_commands.describe(prompt="Describe your community; e.g. Minecraft, Roblox, creator, trading, or gaming server")
 async def design(interaction: discord.Interaction, prompt: str):
     if interaction.guild is None:
         await interaction.response.send_message("Use this inside a server.", ephemeral=True)
